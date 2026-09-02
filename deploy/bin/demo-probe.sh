@@ -1,5 +1,5 @@
 #!/bin/bash
-# Publish DemoApp custom metrics. Does not import Flask or boto3.
+# Optional custom metrics via AWS CLI. Missing credentials must not fail the unit.
 set -euo pipefail
 
 TARGET_URL="${DEMO_PROBE_URL:-http://127.0.0.1/}"
@@ -41,7 +41,7 @@ if [[ -n "$REGION" ]]; then
 fi
 
 if command -v aws >/dev/null 2>&1; then
-  aws "${aws_args[@]}" >/dev/null
+  aws "${aws_args[@]}" >/dev/null || echo "aws put-metric-data skipped (no credentials or IAM?)" >&2
 fi
 
 echo "health=${health_code} health_ok=${health_ok} api=${api_code} latency_ms=${latency_ms} http_5xx=${http_5xx}"

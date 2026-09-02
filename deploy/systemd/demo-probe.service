@@ -1,5 +1,5 @@
 [Unit]
-Description=Publish DemoApp CloudWatch probe metrics
+Description=Optional custom metric probe
 After=network.target
 
 [Service]

@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: CloudWatch alarms for the monitoring demo target (t4g.nano).
+Description: Optional CloudWatch alarms for the fault injection demo.
 
 Parameters:
   InstanceId:
@@ -8,7 +8,7 @@ Parameters:
   SnsTopicArn:
     Type: String
     Default: ""
-    Description: Optional SNS topic for alarm notifications (SentinelNexus / email).
+    Description: Optional SNS topic for alarm notifications.
   MemoryUsedPercentThreshold:
     Type: Number
     Default: 75

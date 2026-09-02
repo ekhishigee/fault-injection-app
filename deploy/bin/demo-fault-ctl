@@ -34,11 +34,13 @@ detect_runtime() {
     echo "$DEMO_RUNTIME"
     return
   fi
-  if [[ -S "$DOCKER_SOCK" ]]; then
+  # A host docker.sock must not select compose. EC2 with Docker installed
+  # still runs the systemd units.
+  if [[ -f /.dockerenv || -f /run/.containerenv ]]; then
     echo "compose"
     return
   fi
-  if command -v systemctl >/dev/null 2>&1; then
+  if command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system ]]; then
     echo "systemd"
     return
   fi

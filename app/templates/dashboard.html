@@ -3,15 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Monitoring Demo Control Panel</title>
+  <title>Fault Injection Control Panel</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
 </head>
 <body>
   <div class="wrap">
     <header>
       <div>
-        <h1>Monitoring Demo Control Panel</h1>
-        <p class="muted">Trigger a fault and leave it running until the CloudWatch alarm fires. Stop only after the monitoring system recovers, or use Reset All.</p>
+        <h1>Fault Injection Control Panel</h1>
+        <p class="muted">Trigger a fault and leave it running. Stop or Reset All when you are done.</p>
       </div>
       <div class="muted">
         <div>Runtime <span id="runtime" class="badge">–</span></div>
@@ -37,7 +37,7 @@
     <div class="card">
       <table>
         <thead>
-          <tr><th>Fault</th><th>Status</th><th>Expected</th><th>Last result</th><th></th></tr>
+          <tr><th>Fault</th><th>Status</th><th>Effect</th><th>Last result</th><th></th></tr>
         </thead>
         <tbody id="resource-faults"></tbody>
       </table>
@@ -47,7 +47,7 @@
     <div class="card">
       <table>
         <thead>
-          <tr><th>Fault</th><th>Status</th><th>Expected</th><th>Last result</th><th></th></tr>
+          <tr><th>Fault</th><th>Status</th><th>Effect</th><th>Last result</th><th></th></tr>
         </thead>
         <tbody id="app-faults"></tbody>
       </table>
@@ -57,7 +57,7 @@
     <div class="card">
       <table>
         <thead>
-          <tr><th>Service</th><th>Status</th><th>Expected</th><th>Last result</th><th></th></tr>
+          <tr><th>Service</th><th>Status</th><th>Effect</th><th>Last result</th><th></th></tr>
         </thead>
         <tbody id="services"></tbody>
       </table>
@@ -65,7 +65,7 @@
 
     <div class="toolbar">
       <button id="reset" class="danger">Reset All Faults</button>
-      <span class="muted">Manual only. Faults do not auto-recover.</span>
+      <span class="muted">Faults stay active until Stop or Reset All.</span>
     </div>
     <p id="error"></p>
 

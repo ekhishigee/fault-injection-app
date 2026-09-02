@@ -57,7 +57,7 @@
       tr.innerHTML =
         "<td><strong>" + escapeHtml(fault.label || id) + "</strong>" + extra(fault) + "</td>" +
         "<td><span class=\"badge " + fault.status + "\">" + escapeHtml(fault.status) + "</span></td>" +
-        "<td class=\"detail\">" + escapeHtml(info.alarm || "") + "<br>" + escapeHtml(info.expect_alarm || "") + "</td>" +
+        "<td class=\"detail\">" + escapeHtml(info.effect || "") + (info.expect ? "<br>" + escapeHtml(info.expect) : "") + "</td>" +
         "<td class=\"last-result-cell\">" + lastResult(fault) + "</td>" +
         "<td class=\"actions\"></td>";
       const actions = tr.lastChild;
@@ -88,7 +88,7 @@
         "<td><strong>" + (name === "target" ? "Demo Target" : "Nginx") + "</strong></td>" +
         "<td><span class=\"badge " + (running ? "running" : "stopped") + "\">" +
         (running ? "Running" : "Stopped") + "</span></td>" +
-        "<td class=\"detail\">" + escapeHtml(info.alarm || "") + "<br>" + escapeHtml(info.expect_alarm || "") + "</td>" +
+        "<td class=\"detail\">" + escapeHtml(info.effect || "") + (info.expect ? "<br>" + escapeHtml(info.expect) : "") + "</td>" +
         "<td class=\"last-result-cell\">" + lastResult(fault) + "</td>" +
         "<td class=\"actions\"></td>";
       const actions = tr.lastChild;

@@ -1,4 +1,4 @@
-description: Stop CPU/memory/disk stress and start nginx plus demo-target. Use as the CPU recovery runbook.
+description: Stop CPU/memory/disk stress and start nginx plus demo-target.
 schemaVersion: "0.3"
 parameters:
   AutomationAssumeRole:

@@ -1,9 +1,9 @@
-# Local laptop or EC2 instance. Same dashboard API as the systemd install.
+# Local laptop. Same dashboard API as the systemd install.
 #   docker compose up --build
 # Dashboard: http://localhost:8080/?token=local-demo
 # Target:    http://localhost/health
 #
-# On t4g.nano prefer ./deploy/install.sh so CloudWatch procstat matches host units.
+# On small EC2 instances use ./deploy/install.sh instead of Compose.
 
 name: demo-target
 

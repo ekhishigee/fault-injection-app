@@ -40,7 +40,7 @@ def test_controller_status_and_fault_api(tmp_path):
     body = status.get_json()
     assert body["faults"]["cpu"]["status"] == "IDLE"
     assert "system" in body
-    assert body["catalog"]["cpu"]["alarm"] == "DemoApp-CPU-High"
+    assert "CPU" in body["catalog"]["cpu"]["effect"]
 
     started = client.post("/faults/cpu/start")
     assert started.status_code == 200

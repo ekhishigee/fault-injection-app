@@ -1,11 +1,11 @@
-"""File-locked JSON state shared by controller, target, and watchdog."""
+"""File-locked JSON state shared by the controller and target."""
 
 from __future__ import annotations
 
 import json
 import os
 import time
-from enum import StrEnum
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -28,7 +28,7 @@ DEFAULT_STATE_CANDIDATES = (
 )
 
 
-class FaultStatus(StrEnum):
+class FaultStatus(str, Enum):
     IDLE = "IDLE"
     ACTIVE = "ACTIVE"
     RECOVERING = "RECOVERING"

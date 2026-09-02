@@ -1,5 +1,5 @@
 [Unit]
-Description=Publish DemoApp probe metrics every 60 seconds
+Description=Optional custom metric probe every 60 seconds
 
 [Timer]
 OnBootSec=30
