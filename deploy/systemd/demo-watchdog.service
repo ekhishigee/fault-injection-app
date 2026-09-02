@@ -1,0 +1,18 @@
+[Unit]
+Description=Expire timed demo faults
+After=demo-controller.service
+
+[Service]
+Type=oneshot
+User=demo
+Group=demo
+WorkingDirectory=/opt/demo-target
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/opt/demo-target
+Environment=DEMO_STATE_PATH=/var/lib/demo-faults/state.json
+Environment=DEMO_DB_PATH=/var/lib/demo-faults/events.db
+Environment=DEMO_FAULT_CTL=/opt/demo-target/deploy/bin/demo-fault-ctl
+EnvironmentFile=-/etc/demo-target/env
+ExecStart=/opt/demo-target/.venv/bin/python -m app.watchdog
+MemoryMax=32M
+NoNewPrivileges=true

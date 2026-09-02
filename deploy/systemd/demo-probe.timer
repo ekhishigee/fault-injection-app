@@ -1,0 +1,11 @@
+[Unit]
+Description=Publish DemoApp probe metrics every 60 seconds
+
+[Timer]
+OnBootSec=30
+OnUnitActiveSec=60
+AccuracySec=10
+Unit=demo-probe.service
+
+[Install]
+WantedBy=timers.target

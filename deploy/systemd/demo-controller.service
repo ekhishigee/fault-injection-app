@@ -1,0 +1,27 @@
+[Unit]
+Description=Monitoring demo controller (dashboard + fault API)
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=demo
+Group=demo
+WorkingDirectory=/opt/demo-target
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/opt/demo-target
+Environment=DEMO_STATE_PATH=/var/lib/demo-faults/state.json
+Environment=DEMO_DB_PATH=/var/lib/demo-faults/events.db
+Environment=DEMO_TOKEN_PATH=/etc/demo-target/token
+Environment=DEMO_FAULT_CTL=/opt/demo-target/deploy/bin/demo-fault-ctl
+Environment=DEMO_CONTROLLER_HOST=0.0.0.0
+Environment=DEMO_CONTROLLER_PORT=8080
+EnvironmentFile=-/etc/demo-target/env
+ExecStart=/opt/demo-target/.venv/bin/python -m app.controller
+Restart=on-failure
+RestartSec=3
+MemoryMax=64M
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

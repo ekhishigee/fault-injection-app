@@ -1,0 +1,296 @@
+#!/bin/bash
+# Privileged helper for the demo controller.
+# systemd  — systemctl / systemd-run (Amazon Linux install)
+# compose  — stress-ng in-process + Docker Engine API over the mounted socket
+set -euo pipefail
+
+CPU_UNIT="demo-fault-cpu.service"
+MEM_UNIT="demo-fault-mem.service"
+DISK_UNIT="demo-fault-disk.service"
+DISK_MOUNT="${DEMO_DISK_MOUNT:-/mnt/demo-disk}"
+DISK_FILL="${DISK_MOUNT}/fill.bin"
+CPU_TIMEOUT="${DEMO_CPU_TIMEOUT_SEC:-90}"
+MEM_TIMEOUT="${DEMO_MEM_TIMEOUT_SEC:-60}"
+DISK_TIMEOUT="${DEMO_DISK_TIMEOUT_SEC:-180}"
+CPU_QUOTA="${DEMO_CPU_QUOTA:-70%}"
+MEM_MAX="${DEMO_MEM_SYSTEMD_MAX:-48M}"
+CPU_WORKERS_MAX="${DEMO_CPU_WORKERS_MAX:-2}"
+MEM_BYTES_MAX="${DEMO_MEM_BYTES_MAX:-33554432}"
+DISK_FILL_CAP="${DEMO_DISK_FILL_CAP_BYTES:-0}"
+STRESS_NG="${STRESS_NG:-/usr/bin/stress-ng}"
+PID_DIR="${DEMO_FAULT_PID_DIR:-/tmp/demo-fault-pids}"
+DOCKER_SOCK="${DEMO_DOCKER_SOCK:-/var/run/docker.sock}"
+TARGET_CONTAINER="${DEMO_TARGET_CONTAINER:-demo-target}"
+NGINX_CONTAINER="${DEMO_NGINX_CONTAINER:-demo-nginx}"
+
+usage() {
+  echo "usage: demo-fault-ctl <command> [args]" >&2
+  echo "commands: cpu-start|cpu-stop|cpu-status|memory-start|memory-stop|memory-status|disk-start|disk-stop|disk-status|target-start|target-stop|target-restart|target-status|nginx-start|nginx-stop|nginx-restart|nginx-status" >&2
+  exit 2
+}
+
+detect_runtime() {
+  if [[ -n "${DEMO_RUNTIME:-}" ]]; then
+    echo "$DEMO_RUNTIME"
+    return
+  fi
+  if [[ -S "$DOCKER_SOCK" ]]; then
+    echo "compose"
+    return
+  fi
+  if command -v systemctl >/dev/null 2>&1; then
+    echo "systemd"
+    return
+  fi
+  echo "local"
+}
+
+RUNTIME="$(detect_runtime)"
+
+require_root() {
+  if [[ "$RUNTIME" == "compose" ]]; then
+    return
+  fi
+  if [[ "$(id -u)" -ne 0 ]]; then
+    echo "demo-fault-ctl must run as root" >&2
+    exit 1
+  fi
+}
+
+clamp_int() {
+  local value="$1"
+  local min="$2"
+  local max="$3"
+  if [[ "$value" -lt "$min" ]]; then
+    value="$min"
+  fi
+  if [[ "$value" -gt "$max" ]]; then
+    value="$max"
+  fi
+  echo "$value"
+}
+
+unit_status() {
+  local unit="$1"
+  if systemctl is-active --quiet "$unit"; then
+    echo "active"
+  else
+    echo "inactive"
+  fi
+}
+
+clear_unit() {
+  local unit="$1"
+  systemctl stop "$unit" >/dev/null 2>&1 || true
+  systemctl reset-failed "$unit" >/dev/null 2>&1 || true
+}
+
+pid_status() {
+  local name="$1"
+  local file="${PID_DIR}/${name}.pid"
+  if [[ -f "$file" ]] && kill -0 "$(cat "$file")" 2>/dev/null; then
+    echo "active"
+  else
+    echo "inactive"
+  fi
+}
+
+pid_stop() {
+  local name="$1"
+  local file="${PID_DIR}/${name}.pid"
+  if [[ -f "$file" ]]; then
+    kill "$(cat "$file")" 2>/dev/null || true
+    rm -f "$file"
+  fi
+}
+
+pid_start() {
+  local name="$1"
+  shift
+  mkdir -p "$PID_DIR"
+  pid_stop "$name"
+  nohup "$@" >/dev/null 2>&1 &
+  echo $! > "${PID_DIR}/${name}.pid"
+}
+
+docker_api() {
+  local method="$1"
+  local path="$2"
+  curl -sS --unix-socket "$DOCKER_SOCK" -X "$method" \
+    --max-time 20 \
+    -o /tmp/demo-docker-out \
+    -w "%{http_code}" \
+    "http://localhost/v1.43${path}"
+}
+
+docker_container() {
+  local name="$1"
+  local action="$2"
+  if [[ ! -S "$DOCKER_SOCK" ]]; then
+    echo "docker socket $DOCKER_SOCK is not mounted" >&2
+    exit 1
+  fi
+  local code
+  code="$(docker_api POST "/containers/${name}/${action}")"
+  if [[ "$code" != "204" && "$code" != "304" && "$code" != "200" ]]; then
+    echo "docker ${action} ${name} failed (HTTP ${code})" >&2
+    cat /tmp/demo-docker-out >&2 || true
+    exit 1
+  fi
+}
+
+docker_running() {
+  local name="$1"
+  if [[ ! -S "$DOCKER_SOCK" ]]; then
+    echo "inactive"
+    return
+  fi
+  local code
+  code="$(docker_api GET "/containers/${name}/json")"
+  if [[ "$code" != "200" ]]; then
+    echo "inactive"
+    return
+  fi
+  python3 - <<'PY'
+import json
+data = json.load(open("/tmp/demo-docker-out", encoding="utf-8"))
+print("active" if data.get("State", {}).get("Running") else "inactive")
+PY
+}
+
+disk_fill_bytes() {
+  python3 - "$DISK_MOUNT" "$DISK_FILL_CAP" <<'PY'
+import os, shutil, sys
+mount = sys.argv[1]
+cap = int(sys.argv[2])
+if not os.path.isdir(mount):
+    raise SystemExit(f"disk mount missing: {mount}")
+usage = shutil.disk_usage(mount)
+target = int(usage.total * 0.85)
+need = target - usage.used
+need = min(need, usage.free - 8 * 1024 * 1024)
+if cap > 0:
+    need = min(need, cap)
+print(max(1, need))
+PY
+}
+
+cpu_start_systemd() {
+  local workers
+  workers="$(clamp_int "${1:-1}" 1 "$CPU_WORKERS_MAX")"
+  clear_unit "$CPU_UNIT"
+  systemd-run --unit=demo-fault-cpu --collect \
+    --property="CPUQuota=${CPU_QUOTA}" \
+    "$STRESS_NG" --cpu "$workers"
+}
+
+memory_start_systemd() {
+  local bytes
+  bytes="$(clamp_int "${1:-16777216}" 1 "$MEM_BYTES_MAX")"
+  clear_unit "$MEM_UNIT"
+  systemd-run --unit=demo-fault-mem --collect \
+    --property="MemoryMax=${MEM_MAX}" \
+    "$STRESS_NG" --vm 1 --vm-bytes "$bytes" --vm-keep
+}
+
+disk_start_common() {
+  if [[ ! -d "$DISK_MOUNT" ]]; then
+    echo "disk mount $DISK_MOUNT is missing" >&2
+    exit 1
+  fi
+  local size
+  size="$(disk_fill_bytes)"
+  rm -f "$DISK_FILL"
+  fallocate -l "$size" "$DISK_FILL"
+}
+
+cpu_start_compose() {
+  local workers
+  workers="$(clamp_int "${1:-1}" 1 "$CPU_WORKERS_MAX")"
+  pid_start cpu "$STRESS_NG" --cpu "$workers"
+}
+
+memory_start_compose() {
+  local bytes
+  bytes="$(clamp_int "${1:-16777216}" 1 "$MEM_BYTES_MAX")"
+  pid_start memory "$STRESS_NG" --vm 1 --vm-bytes "$bytes" --vm-keep
+}
+
+disk_start_compose() {
+  disk_start_common
+}
+
+disk_status_compose() {
+  if [[ -f "$DISK_FILL" ]]; then
+    echo "active"
+  else
+    echo "inactive"
+  fi
+}
+
+disk_stop_compose() {
+  pid_stop disk
+  rm -f "$DISK_FILL"
+}
+
+require_root
+
+cmd="${1:-}"
+shift || true
+
+case "$cmd" in
+  cpu-start)
+    if [[ "$RUNTIME" == "compose" ]]; then cpu_start_compose "${1:-1}"; else cpu_start_systemd "${1:-1}"; fi
+    ;;
+  cpu-stop)
+    if [[ "$RUNTIME" == "compose" ]]; then pid_stop cpu; else clear_unit "$CPU_UNIT"; fi
+    ;;
+  cpu-status)
+    if [[ "$RUNTIME" == "compose" ]]; then pid_status cpu; else unit_status "$CPU_UNIT"; fi
+    ;;
+  memory-start)
+    if [[ "$RUNTIME" == "compose" ]]; then memory_start_compose "${1:-16777216}"; else memory_start_systemd "${1:-16777216}"; fi
+    ;;
+  memory-stop)
+    if [[ "$RUNTIME" == "compose" ]]; then pid_stop memory; else clear_unit "$MEM_UNIT"; fi
+    ;;
+  memory-status)
+    if [[ "$RUNTIME" == "compose" ]]; then pid_status memory; else unit_status "$MEM_UNIT"; fi
+    ;;
+  disk-start)
+    disk_start_common
+    ;;
+  disk-stop)
+    if [[ "$RUNTIME" == "compose" ]]; then disk_stop_compose; else clear_unit "$DISK_UNIT"; rm -f "$DISK_FILL"; fi
+    ;;
+  disk-status)
+    if [[ "$RUNTIME" == "compose" ]]; then disk_status_compose; else
+      if [[ -f "$DISK_FILL" ]]; then echo "active"; else echo "inactive"; fi
+    fi
+    ;;
+  target-start)
+    if [[ "$RUNTIME" == "compose" ]]; then docker_container "$TARGET_CONTAINER" start; else systemctl start demo-target.service; fi
+    ;;
+  target-stop)
+    if [[ "$RUNTIME" == "compose" ]]; then docker_container "$TARGET_CONTAINER" stop; else systemctl stop demo-target.service; fi
+    ;;
+  target-restart)
+    if [[ "$RUNTIME" == "compose" ]]; then docker_container "$TARGET_CONTAINER" restart; else systemctl restart demo-target.service; fi
+    ;;
+  target-status)
+    if [[ "$RUNTIME" == "compose" ]]; then docker_running "$TARGET_CONTAINER"; else unit_status demo-target.service; fi
+    ;;
+  nginx-start)
+    if [[ "$RUNTIME" == "compose" ]]; then docker_container "$NGINX_CONTAINER" start; else systemctl start nginx.service; fi
+    ;;
+  nginx-stop)
+    if [[ "$RUNTIME" == "compose" ]]; then docker_container "$NGINX_CONTAINER" stop; else systemctl stop nginx.service; fi
+    ;;
+  nginx-restart)
+    if [[ "$RUNTIME" == "compose" ]]; then docker_container "$NGINX_CONTAINER" restart; else systemctl restart nginx.service; fi
+    ;;
+  nginx-status)
+    if [[ "$RUNTIME" == "compose" ]]; then docker_running "$NGINX_CONTAINER"; else unit_status nginx.service; fi
+    ;;
+  *) usage ;;
+esac

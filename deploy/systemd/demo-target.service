@@ -1,0 +1,24 @@
+[Unit]
+Description=Monitoring demo target application
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=demo
+Group=demo
+WorkingDirectory=/opt/demo-target
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/opt/demo-target
+Environment=DEMO_STATE_PATH=/var/lib/demo-faults/state.json
+Environment=DEMO_TARGET_HOST=127.0.0.1
+Environment=DEMO_TARGET_PORT=8081
+EnvironmentFile=-/etc/demo-target/env
+ExecStart=/opt/demo-target/.venv/bin/python -m app.target
+Restart=on-failure
+RestartSec=3
+MemoryMax=64M
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

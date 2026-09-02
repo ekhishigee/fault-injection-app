@@ -1,0 +1,181 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CloudWatch alarms for the monitoring demo target (t4g.nano).
+
+Parameters:
+  InstanceId:
+    Type: AWS::EC2::Instance::Id
+    Description: Demo EC2 instance id.
+  SnsTopicArn:
+    Type: String
+    Default: ""
+    Description: Optional SNS topic for alarm notifications (SentinelNexus / email).
+  MemoryUsedPercentThreshold:
+    Type: Number
+    Default: 75
+    Description: Set after measuring idle mem_used_percent. Use idle + about 8 points. Do not use 80-90 blindly.
+  CpuThreshold:
+    Type: Number
+    Default: 40
+  DiskUsedPercentThreshold:
+    Type: Number
+    Default: 70
+  SlowApiMsThreshold:
+    Type: Number
+    Default: 2000
+
+Conditions:
+  HasSns: !Not [!Equals [!Ref SnsTopicArn, ""]]
+
+Resources:
+  CpuHigh:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: DemoApp-CPU-High
+      AlarmDescription: CPU stress on the demo instance.
+      Namespace: AWS/EC2
+      MetricName: CPUUtilization
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref InstanceId
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: !Ref CpuThreshold
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasSns, [!Ref SnsTopicArn], !Ref AWS::NoValue]
+      OKActions: !If [HasSns, [!Ref SnsTopicArn], !Ref AWS::NoValue]
+
+  MemoryHigh:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: DemoApp-Memory-High
+      AlarmDescription: Controlled +16 MiB memory fault. Threshold must be idle plus a small delta.
+      Namespace: CWAgent
+      MetricName: mem_used_percent
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref InstanceId
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: !Ref MemoryUsedPercentThreshold
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasSns, [!Ref SnsTopicArn], !Ref AWS::NoValue]
+      OKActions: !If [HasSns, [!Ref SnsTopicArn], !Ref AWS::NoValue]
+
+  DiskHigh:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: DemoApp-Disk-High
+      AlarmDescription: Loop filesystem /mnt/demo-disk filled by the demo (root is never filled).
+      Namespace: CWAgent
+      MetricName: disk_used_percent
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref InstanceId
+        - Name: path
+          Value: /mnt/demo-disk
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: !Ref DiskUsedPercentThreshold
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasSns, [!Ref SnsTopicArn], !Ref AWS::NoValue]
+      OKActions: !If [HasSns, [!Ref SnsTopicArn], !Ref AWS::NoValue]
+
+  TargetDown:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: DemoApp-Target-Down
+      AlarmDescription: demo-target process is not running.
+      Namespace: CWAgent
+      MetricName: procstat_lookup_pid_count
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref InstanceId
+        - Name: pattern
+          Value: python -m app.target
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasSns, [!Ref SnsTopicArn], !Ref AWS::NoValue]
+      OKActions: !If [HasSns, [!Ref SnsTopicArn], !Ref AWS::NoValue]
+
+  NginxDown:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: DemoApp-Nginx-Down
+      AlarmDescription: nginx master process is not running.
+      Namespace: CWAgent
+      MetricName: procstat_lookup_pid_count
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref InstanceId
+        - Name: pattern
+          Value: "nginx: master process"
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasSns, [!Ref SnsTopicArn], !Ref AWS::NoValue]
+      OKActions: !If [HasSns, [!Ref SnsTopicArn], !Ref AWS::NoValue]
+
+  Http500:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: DemoApp-HTTP-500
+      AlarmDescription: Probe saw a 5xx from /api/demo. Suggested unlinked / no-match alarm.
+      Namespace: DemoApp
+      MetricName: Http5xx
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasSns, [!Ref SnsTopicArn], !Ref AWS::NoValue]
+      OKActions: !If [HasSns, [!Ref SnsTopicArn], !Ref AWS::NoValue]
+
+  SlowApi:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: DemoApp-Slow-API
+      AlarmDescription: Probe latency for /api/demo exceeded the threshold.
+      Namespace: DemoApp
+      MetricName: LatencyMs
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: !Ref SlowApiMsThreshold
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasSns, [!Ref SnsTopicArn], !Ref AWS::NoValue]
+      OKActions: !If [HasSns, [!Ref SnsTopicArn], !Ref AWS::NoValue]
+
+  HealthFail:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: DemoApp-Health-Fail
+      AlarmDescription: Probe GET /health is not 200.
+      Namespace: DemoApp
+      MetricName: HealthCheck
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasSns, [!Ref SnsTopicArn], !Ref AWS::NoValue]
+      OKActions: !If [HasSns, [!Ref SnsTopicArn], !Ref AWS::NoValue]
+
+Outputs:
+  AlarmNames:
+    Value: DemoApp-CPU-High,DemoApp-Memory-High,DemoApp-Disk-High,DemoApp-Target-Down,DemoApp-Nginx-Down,DemoApp-HTTP-500,DemoApp-Slow-API,DemoApp-Health-Fail

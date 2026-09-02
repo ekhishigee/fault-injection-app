@@ -1,0 +1,12 @@
+[Unit]
+Description=Publish DemoApp CloudWatch probe metrics
+After=network.target
+
+[Service]
+Type=oneshot
+User=demo
+Group=demo
+EnvironmentFile=-/etc/demo-target/env
+ExecStart=/opt/demo-target/deploy/bin/demo-probe.sh
+MemoryMax=32M
+NoNewPrivileges=true

@@ -1,0 +1,11 @@
+[Unit]
+Description=Run demo fault watchdog every 15 seconds
+
+[Timer]
+OnBootSec=20
+OnUnitActiveSec=15
+AccuracySec=5
+Unit=demo-watchdog.service
+
+[Install]
+WantedBy=timers.target

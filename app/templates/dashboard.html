@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Monitoring Demo Control Panel</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>Monitoring Demo Control Panel</h1>
+        <p class="muted">Trigger a fault and leave it running until the CloudWatch alarm fires. Stop only after the monitoring system recovers, or use Reset All.</p>
+      </div>
+      <div class="muted">
+        <div>Runtime <span id="runtime" class="badge">–</span></div>
+        <div id="updated"></div>
+      </div>
+    </header>
+
+    {% if token_required and not authorized %}
+    <form class="token-box" method="get" action="/">
+      <label>Access token <input type="password" name="token" required></label>
+      <button type="submit" class="primary">Unlock</button>
+    </form>
+    {% else %}
+
+    <h2>System</h2>
+    <div class="gauges">
+      <div class="card"><div class="muted">CPU</div><div class="gauge-value" id="cpu">–</div><div class="bar"><span id="cpu-bar"></span></div></div>
+      <div class="card"><div class="muted">Memory</div><div class="gauge-value" id="memory">–</div><div class="bar"><span id="memory-bar"></span></div></div>
+      <div class="card"><div class="muted">Disk <span id="disk-path"></span></div><div class="gauge-value" id="disk">–</div><div class="bar"><span id="disk-bar"></span></div></div>
+    </div>
+
+    <h2>Resource faults</h2>
+    <div class="card">
+      <table>
+        <thead>
+          <tr><th>Fault</th><th>Status</th><th>Expected</th><th>Last result</th><th></th></tr>
+        </thead>
+        <tbody id="resource-faults"></tbody>
+      </table>
+    </div>
+
+    <h2>Application faults</h2>
+    <div class="card">
+      <table>
+        <thead>
+          <tr><th>Fault</th><th>Status</th><th>Expected</th><th>Last result</th><th></th></tr>
+        </thead>
+        <tbody id="app-faults"></tbody>
+      </table>
+    </div>
+
+    <h2>Services</h2>
+    <div class="card">
+      <table>
+        <thead>
+          <tr><th>Service</th><th>Status</th><th>Expected</th><th>Last result</th><th></th></tr>
+        </thead>
+        <tbody id="services"></tbody>
+      </table>
+    </div>
+
+    <div class="toolbar">
+      <button id="reset" class="danger">Reset All Faults</button>
+      <span class="muted">Manual only. Faults do not auto-recover.</span>
+    </div>
+    <p id="error"></p>
+
+    <h2>Fault history</h2>
+    <div class="card history">
+      <table>
+        <thead>
+          <tr><th>When</th><th>Fault</th><th>Action</th><th>Result</th><th>Detail</th></tr>
+        </thead>
+        <tbody id="history"></tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+  <script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+</body>
+</html>

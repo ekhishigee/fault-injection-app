@@ -1,0 +1,4 @@
+# Allow the demo controller to inject and recover only the listed faults.
+# Do not add sshd, demo-controller, amazon-ssm-agent, or amazon-cloudwatch-agent.
+demo ALL=(root) NOPASSWD: /opt/demo-target/deploy/bin/demo-fault-ctl *
+Defaults:demo !requiretty

@@ -1,0 +1,20 @@
+description: Start the demo-target service on the tagged instance. Safe for automatic start with no parameters.
+schemaVersion: "0.3"
+parameters:
+  AutomationAssumeRole:
+    type: String
+    default: ""
+    description: Optional IAM role assumed by Automation.
+mainSteps:
+  - name: RestartTarget
+    action: aws:runCommand
+    inputs:
+      DocumentName: AWS-RunShellScript
+      Targets:
+        - Key: tag:App
+          Values:
+            - demo-target
+      Parameters:
+        commands:
+          - systemctl start demo-target
+          - systemctl is-active demo-target

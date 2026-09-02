@@ -1,0 +1,20 @@
+description: Restart nginx on the tagged demo instance. Safe for automatic start with no parameters.
+schemaVersion: "0.3"
+parameters:
+  AutomationAssumeRole:
+    type: String
+    default: ""
+    description: Optional IAM role assumed by Automation.
+mainSteps:
+  - name: RestartNginx
+    action: aws:runCommand
+    inputs:
+      DocumentName: AWS-RunShellScript
+      Targets:
+        - Key: tag:App
+          Values:
+            - demo-target
+      Parameters:
+        commands:
+          - systemctl start nginx
+          - systemctl is-active nginx

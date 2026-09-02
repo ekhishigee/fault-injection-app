@@ -1,0 +1,23 @@
+description: Stop CPU/memory/disk stress and start nginx plus demo-target. Use as the CPU recovery runbook.
+schemaVersion: "0.3"
+parameters:
+  AutomationAssumeRole:
+    type: String
+    default: ""
+    description: Optional IAM role assumed by Automation.
+mainSteps:
+  - name: StopResourceFaults
+    action: aws:runCommand
+    inputs:
+      DocumentName: AWS-RunShellScript
+      Targets:
+        - Key: tag:App
+          Values:
+            - demo-target
+      Parameters:
+        commands:
+          - /opt/demo-target/deploy/bin/demo-fault-ctl cpu-stop || true
+          - /opt/demo-target/deploy/bin/demo-fault-ctl memory-stop || true
+          - /opt/demo-target/deploy/bin/demo-fault-ctl disk-stop || true
+          - systemctl start demo-target || true
+          - systemctl start nginx || true

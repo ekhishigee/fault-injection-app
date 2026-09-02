@@ -1,0 +1,63 @@
+from app.common.events import EventStore
+from app.common.limits import Limits
+from app.common.state import StateStore
+from app.controller.app import create_app as create_controller
+from app.faults.engine import FaultEngine
+from app.faults.runner import FakeRunner
+from app.target.app import create_app as create_target
+
+
+def make_controller(tmp_path):
+    events = EventStore(tmp_path / "events.db")
+    engine = FaultEngine(
+        store=StateStore(tmp_path / "state.json"),
+        limits=Limits(),
+        runner=FakeRunner(),
+        events=events,
+    )
+    return create_controller(engine=engine, limits=Limits(), events=events).test_client()
+
+
+def test_target_health_and_injected_faults(tmp_path):
+    store = StateStore(tmp_path / "state.json")
+    client = create_target(store=store, limits=Limits()).test_client()
+    assert client.get("/health").status_code == 200
+    assert client.get("/api/demo").status_code == 200
+
+    store.set_flag("health_fail", True)
+    assert client.get("/health").status_code == 503
+
+    store.set_flag("health_fail", False)
+    store.set_flag("http_500", True)
+    assert client.get("/api/demo").status_code == 500
+    assert client.get("/health").status_code == 200
+
+
+def test_controller_status_and_fault_api(tmp_path):
+    client = make_controller(tmp_path)
+    status = client.get("/api/status")
+    assert status.status_code == 200
+    body = status.get_json()
+    assert body["faults"]["cpu"]["status"] == "IDLE"
+    assert "system" in body
+    assert body["catalog"]["cpu"]["alarm"] == "DemoApp-CPU-High"
+
+    started = client.post("/faults/cpu/start")
+    assert started.status_code == 200
+    started_body = started.get_json()
+    assert started_body["faults"]["cpu"]["status"] == "ACTIVE"
+    assert started_body["events"][0]["result"] == "started"
+
+    stopped = client.post("/faults/cpu/stop")
+    assert stopped.status_code == 200
+    assert stopped.get_json()["events"][0]["result"] == "stopped"
+
+    reset = client.post("/faults/reset")
+    assert reset.status_code == 200
+    assert reset.get_json()["faults"]["cpu"]["status"] == "IDLE"
+
+
+def test_controller_rejects_unknown_fault(tmp_path):
+    client = make_controller(tmp_path)
+    response = client.post("/faults/reboot/start")
+    assert response.status_code == 404
