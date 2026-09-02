@@ -34,11 +34,9 @@ Set the memory threshold to **idle used percent + about 8**, not 80–90.
 
 ## Application logs
 
-Set `DEMO_CLOUDWATCH_LOGS=1` plus credentials (keys, profile, or instance role). The controller writes realistic app lines to `/fault-inject/app` (override with `DEMO_CW_LOG_GROUP` / `DEMO_CW_LOG_STREAM`). The dashboard panel is a separate flag: `DEMO_APP_LOGS=1`.
+Put AWS credentials in env (`/etc/demo-target/env` or Compose `.env`). Turn **CloudWatch logs** on from the dashboard. The controller probes CreateLogGroup / CreateLogStream; missing keys or `AccessDenied` stay visible on the switch and writing stays off.
 
-If the CloudWatch flag is on but credentials or boto3 fail, local/dashboard logs still work.
-
-On systemd, add the flags to `/etc/demo-target/env` and restart `demo-controller`.
+Override group/stream with `DEMO_CW_LOG_GROUP` / `DEMO_CW_LOG_STREAM`. The local panel is `DEMO_APP_LOGS=1`.
 
 ## Example SSM documents
 

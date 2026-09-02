@@ -60,10 +60,18 @@ def empty_fault() -> dict[str, Any]:
     }
 
 
+def empty_settings() -> dict[str, Any]:
+    return {
+        "cloudwatch_logs": False,
+        "cloudwatch_error": "",
+    }
+
+
 def empty_state() -> dict[str, Any]:
     return {
         "faults": {fault_id: empty_fault() for fault_id in FAULT_IDS},
         "flags": {fault_id: False for fault_id in FLAG_FAULTS},
+        "settings": empty_settings(),
     }
 
 
@@ -124,6 +132,15 @@ class StateStore:
         data = self.read()
         return {name: bool(data.get("flags", {}).get(name)) for name in FLAG_FAULTS}
 
+    def settings(self) -> dict[str, Any]:
+        return dict(self.read().get("settings") or empty_settings())
+
+    def set_setting(self, name: str, value: Any) -> dict[str, Any]:
+        def mutate(data: dict[str, Any]) -> None:
+            data.setdefault("settings", empty_settings())[name] = value
+
+        return self.update(mutate)
+
     def expired_faults(self, now: float | None = None) -> list[str]:
         now = time.time() if now is None else now
         expired: list[str] = []
@@ -166,6 +183,9 @@ def _normalize(data: dict[str, Any]) -> dict[str, Any]:
         base["faults"][fault_id] = merged
     for name in FLAG_FAULTS:
         base["flags"][name] = bool(flags.get(name, False))
+    incoming_settings = data.get("settings") if isinstance(data.get("settings"), dict) else {}
+    base["settings"]["cloudwatch_logs"] = bool(incoming_settings.get("cloudwatch_logs", False))
+    base["settings"]["cloudwatch_error"] = str(incoming_settings.get("cloudwatch_error") or "")
     return base
 
 

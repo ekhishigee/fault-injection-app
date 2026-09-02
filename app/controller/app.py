@@ -7,6 +7,7 @@ from flask import Flask, jsonify, make_response, render_template, request
 
 from app.common.applog import AppLog, app_logs_enabled, get_applog
 from app.common.catalog import catalog_payload
+from app.common.cwlogs import credential_status
 from app.common.events import EventStore
 from app.common.limits import Limits
 from app.common.metrics import system_gauges
@@ -29,6 +30,9 @@ def create_app(
     engine = engine or FaultEngine(
         store=StateStore(), limits=limits, events=events, applog=applog
     )
+    applog.bind_store(engine.store)
+    if engine.store.settings().get("cloudwatch_logs"):
+        applog.set_cloudwatch(True)
     app = Flask(
         __name__,
         template_folder=str(ROOT / "templates"),
@@ -74,6 +78,18 @@ def create_app(
         fault_id = request.args.get("fault_id")
         limit = int(request.args.get("limit", "40"))
         return jsonify({"events": events.list(limit=limit, fault_id=fault_id)})
+
+    @app.post("/api/settings/cloudwatch-logs")
+    @require_token
+    def set_cloudwatch_logs():
+        body = request.get_json(silent=True) or {}
+        enabled = bool(body.get("enabled"))
+        result = applog.set_cloudwatch(enabled)
+        payload = _status_payload(engine, events, limits)
+        if enabled and not result.get("ok"):
+            payload["error"] = result.get("error") or "CloudWatch is not available"
+            return jsonify(payload), 400
+        return jsonify(payload)
 
     @app.post("/faults/<fault_id>/start")
     @require_token
@@ -125,7 +141,26 @@ def _status_payload(engine: FaultEngine, events: EventStore, limits: Limits) -> 
     payload["app_logs_enabled"] = app_logs_enabled()
     if payload["app_logs_enabled"]:
         payload["app_logs"] = engine.applog.list(limit=80)
+    payload["cloudwatch_logs"] = _cloudwatch_status(engine)
     return payload
+
+
+def _cloudwatch_status(engine: FaultEngine) -> dict:
+    settings = engine.store.settings()
+    creds = credential_status()
+    enabled = bool(settings.get("cloudwatch_logs"))
+    error = str(settings.get("cloudwatch_error") or "")
+    if not enabled and not creds.get("ok") and not error:
+        error = creds.get("error") or ""
+    return {
+        "enabled": enabled,
+        "credentials": bool(creds.get("credentials")),
+        "error": error,
+        "group": os.environ.get("DEMO_CW_LOG_GROUP", "/fault-inject/app"),
+        "region": os.environ.get("AWS_REGION")
+        or os.environ.get("AWS_DEFAULT_REGION")
+        or "us-east-1",
+    }
 
 
 def main() -> None:

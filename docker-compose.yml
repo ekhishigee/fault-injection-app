@@ -20,6 +20,16 @@ services:
       DEMO_DB_PATH: /var/lib/demo-faults/events.db
       DEMO_TARGET_HOST: 0.0.0.0
       DEMO_TARGET_PORT: "8081"
+      DEMO_APP_LOGS: "${DEMO_APP_LOGS:-0}"
+      DEMO_CLOUDWATCH_LOGS: "${DEMO_CLOUDWATCH_LOGS:-0}"
+      DEMO_CW_LOG_GROUP: "${DEMO_CW_LOG_GROUP:-/fault-inject/app}"
+      DEMO_CW_LOG_STREAM: "${DEMO_CW_LOG_STREAM:-}"
+      AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID:-}"
+      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY:-}"
+      AWS_SESSION_TOKEN: "${AWS_SESSION_TOKEN:-}"
+      AWS_REGION: "${AWS_REGION:-}"
+      AWS_DEFAULT_REGION: "${AWS_DEFAULT_REGION:-}"
+      AWS_PROFILE: "${AWS_PROFILE:-}"
     volumes:
       - ${DEMO_STATE_HOST_PATH:-./data/state}:/var/lib/demo-faults
     expose:

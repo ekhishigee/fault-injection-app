@@ -1,4 +1,4 @@
-from app.common.applog import AppLog, format_entry
+from app.common.applog import AppLog, FileLogStore, access_message, format_entry
 from app.common.catalog import LOG_LINES
 from app.common.cwlogs import CloudWatchSink, credentials_available
 from app.common.events import EventStore
@@ -7,6 +7,7 @@ from app.common.state import StateStore
 from app.controller.app import create_app as create_controller
 from app.faults.engine import FaultEngine
 from app.faults.runner import FakeRunner
+from app.target.app import create_app as create_target
 
 BANNED = ("cpu", "started", "fault", "trigger", "leak", "inject")
 
@@ -60,24 +61,62 @@ def test_heartbeat_waits_interval(tmp_path):
     assert "rss" in applog.list()[-1]["msg"].lower() or "gc" in applog.list()[-1]["msg"].lower()
 
 
-def test_from_env_skips_cloudwatch_without_flag_or_creds(monkeypatch):
-    monkeypatch.delenv("DEMO_CLOUDWATCH_LOGS", raising=False)
+def test_from_env_does_not_attach_cloudwatch(monkeypatch):
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIATEST")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "secret")
+    assert AppLog.from_env().sinks == []
+
+
+def test_switch_on_without_credentials_stays_off(tmp_path, monkeypatch):
     monkeypatch.delenv("AWS_ACCESS_KEY_ID", raising=False)
     monkeypatch.delenv("AWS_SECRET_ACCESS_KEY", raising=False)
     monkeypatch.delenv("AWS_PROFILE", raising=False)
-    assert AppLog.from_env().sinks == []
-
-    monkeypatch.setenv("DEMO_CLOUDWATCH_LOGS", "1")
     monkeypatch.setattr("app.common.cwlogs.credentials_available", lambda: False)
-    assert AppLog.from_env().sinks == []
+    engine = make_engine(tmp_path)
+    client = create_controller(engine=engine, applog=engine.applog).test_client()
+    response = client.post(
+        "/api/settings/cloudwatch-logs",
+        json={"enabled": True},
+    )
+    assert response.status_code == 400
+    body = response.get_json()
+    assert body["cloudwatch_logs"]["enabled"] is False
+    assert "credential" in (body.get("error") or "").lower()
+    assert body["cloudwatch_logs"]["error"]
 
 
-def test_from_env_attaches_cloudwatch_when_ready(monkeypatch):
-    sink = object()
-    monkeypatch.setenv("DEMO_CLOUDWATCH_LOGS", "1")
+def test_switch_off_succeeds(tmp_path):
+    engine = make_engine(tmp_path)
+    client = create_controller(engine=engine, applog=engine.applog).test_client()
+    engine.store.set_setting("cloudwatch_logs", True)
+    response = client.post(
+        "/api/settings/cloudwatch-logs",
+        json={"enabled": False},
+    )
+    assert response.status_code == 200
+    assert response.get_json()["cloudwatch_logs"]["enabled"] is False
+
+
+def test_switch_on_with_probe_ok(tmp_path, monkeypatch):
     monkeypatch.setattr("app.common.cwlogs.credentials_available", lambda: True)
-    monkeypatch.setattr("app.common.cwlogs.CloudWatchSink", lambda: sink)
-    assert AppLog.from_env().sinks == [sink]
+    monkeypatch.setattr(
+        "app.common.cwlogs.probe_access",
+        lambda: {
+            "ok": True,
+            "credentials": True,
+            "error": "",
+            "group": "/fault-inject/app",
+            "region": "us-east-1",
+        },
+    )
+    engine = make_engine(tmp_path)
+    client = create_controller(engine=engine, applog=engine.applog).test_client()
+    response = client.post(
+        "/api/settings/cloudwatch-logs",
+        json={"enabled": True},
+    )
+    assert response.status_code == 200
+    assert response.get_json()["cloudwatch_logs"]["enabled"] is True
 
 
 def test_credentials_keys_or_profile(monkeypatch):
@@ -140,3 +179,36 @@ def test_format_entry_has_ts_and_req():
     assert "3120ms" in entry["msg"] or "2980ms" in entry["msg"]
     assert "req=" in entry["line"]
     assert entry["line"].startswith("ts=")
+
+
+def test_target_access_is_logged(tmp_path):
+    applog = AppLog()
+    store = StateStore(tmp_path / "state.json")
+    client = create_target(store=store, limits=Limits(), applog=applog).test_client()
+    assert client.get("/health").status_code == 200
+    assert client.get("/api/demo").status_code == 200
+    lines = [item["msg"] for item in applog.list()]
+    assert any(msg.startswith("GET /health 200") for msg in lines)
+    assert any(msg.startswith("GET /api/demo 200") for msg in lines)
+    blob = " ".join(lines).lower()
+    for word in BANNED:
+        assert word not in blob
+
+    store.set_flag("http_500", True)
+    assert client.get("/api/demo").status_code == 500
+    assert "GET /api/demo 500" in applog.list()[-1]["msg"]
+    assert "started" not in applog.list()[-1]["line"]
+
+
+def test_access_message_health_fail():
+    assert access_message("GET", "/health", 503, 8) == "GET /health 503 ready=false"
+    assert "cpu" not in access_message("GET", "/api/demo", 200, 12)
+
+
+def test_shared_file_store(tmp_path):
+    store = FileLogStore(tmp_path / "app.log")
+    writer = AppLog(store=store)
+    reader = AppLog(store=store)
+    writer.emit_access("GET", "/health", 200, 4)
+    rows = reader.list()
+    assert rows[-1]["msg"].startswith("GET /health 200")

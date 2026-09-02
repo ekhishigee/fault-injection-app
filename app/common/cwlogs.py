@@ -21,6 +21,61 @@ def credentials_available() -> bool:
         return False
 
 
+def credential_status() -> dict[str, Any]:
+    if credentials_available():
+        return {"ok": True, "credentials": True, "error": ""}
+    return {
+        "ok": False,
+        "credentials": False,
+        "error": (
+            "CloudWatch credentials are missing. Set AWS_ACCESS_KEY_ID and "
+            "AWS_SECRET_ACCESS_KEY in env, or AWS_PROFILE / an instance role."
+        ),
+    }
+
+
+def probe_access(sink: CloudWatchSink | None = None) -> dict[str, Any]:
+    status = credential_status()
+    if not status["ok"]:
+        return status
+    try:
+        sink = sink or CloudWatchSink()
+        sink._ensure_stream(sink._get_client())
+        return {
+            "ok": True,
+            "credentials": True,
+            "error": "",
+            "group": sink.group,
+            "stream": sink.stream,
+            "region": sink.region,
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "credentials": True,
+            "error": humanize_aws_error(exc),
+        }
+
+
+def humanize_aws_error(exc: Exception) -> str:
+    name = type(exc).__name__
+    message = str(exc)
+    lowered = f"{name} {message}".lower()
+    if "nocredentials" in lowered or "unable to locate credentials" in lowered:
+        return (
+            "CloudWatch credentials are missing. Set AWS_ACCESS_KEY_ID and "
+            "AWS_SECRET_ACCESS_KEY in env, or AWS_PROFILE / an instance role."
+        )
+    if "expiredtoken" in lowered or "token has expired" in lowered:
+        return "CloudWatch credentials expired. Refresh the keys or instance role."
+    if "accessdenied" in lowered or "unauthorized" in lowered or "not authorized" in lowered:
+        return (
+            "No CloudWatch Logs access. The credentials need logs:CreateLogGroup, "
+            "logs:CreateLogStream, and logs:PutLogEvents."
+        )
+    return f"CloudWatch access failed: {message.splitlines()[0][:240]}"
+
+
 class CloudWatchSink:
     def __init__(
         self,

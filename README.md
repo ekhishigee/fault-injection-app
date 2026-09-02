@@ -72,12 +72,16 @@ Optional host metrics, example alarms, and application logs: [docs/aws.md](docs/
 
 ## Application logs
 
-Operator history (`started` / `stopped`) stays on the dashboard. A second channel writes **application-looking** lines (runqueue, heap, 5xx, latency) so a reader can infer the fault without being told.
+Operator history (`started` / `stopped`) stays on the dashboard. A second channel writes **application-looking** lines so a reader can infer the fault without being told.
 
-| Flag | Default | What it does |
-| --- | --- | --- |
-| `DEMO_APP_LOGS=1` | off | `GET /api/logs` and an Application logs panel |
-| `DEMO_CLOUDWATCH_LOGS=1` | off | Same lines to CloudWatch Logs **if** AWS credentials exist (`AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`, `AWS_PROFILE`, or an instance role) |
+Lines are written only when:
+
+- the target is accessed (`GET /health`, `GET /api/demo`)
+- a fault is triggered
+- a fault is ACTIVE (about every 15s)
+- a fault is stopped
+
+`DEMO_APP_LOGS=1` shows the Application logs panel. CloudWatch writing is a **dashboard switch** (header). Put keys in env (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`, or `AWS_PROFILE` / instance role). If you turn the switch on without credentials or Logs permission, the dashboard shows the error and the switch stays off.
 
 Log group defaults to `/fault-inject/app`. See [`.env.example`](.env.example). Do not commit keys.
 

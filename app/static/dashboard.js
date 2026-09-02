@@ -17,6 +17,12 @@
   document.getElementById("reset").addEventListener("click", function () {
     post("/faults/reset");
   });
+  const cwSwitch = document.getElementById("cw-logs-switch");
+  if (cwSwitch) {
+    cwSwitch.addEventListener("change", function () {
+      setCloudWatch(cwSwitch.checked);
+    });
+  }
 
   refresh();
   setInterval(refresh, 4000);
@@ -47,6 +53,7 @@
     fillServices(data.services || {}, data.faults || {}, catalog);
     fillHistory(data.events || [], catalog);
     fillAppLogs(data);
+    fillCloudWatch(data);
   }
 
   function fillFaultTable(tbody, ids, faults, catalog) {
@@ -144,6 +151,53 @@
       return row.line || row.msg || "";
     }).join("\n");
     pane.scrollTop = pane.scrollHeight;
+  }
+
+  function fillCloudWatch(data) {
+    const cw = data.cloudwatch_logs || {};
+    const box = document.getElementById("cw-logs-switch");
+    const hint = document.getElementById("cw-logs-hint");
+    if (box && !box.dataset.busy) {
+      box.checked = !!cw.enabled;
+    }
+    if (!hint) return;
+    if (cw.error) {
+      hint.textContent = cw.error;
+      hint.className = "cw-hint cw-error";
+    } else if (cw.enabled) {
+      hint.textContent = "Writing to " + (cw.group || "/fault-inject/app") +
+        (cw.region ? " (" + cw.region + ")" : "");
+      hint.className = "cw-hint";
+    } else {
+      hint.textContent = "Off. Credentials stay in env.";
+      hint.className = "cw-hint";
+    }
+  }
+
+  function setCloudWatch(enabled) {
+    const box = document.getElementById("cw-logs-switch");
+    const hint = document.getElementById("cw-logs-hint");
+    if (box) box.dataset.busy = "1";
+    fetch("/api/settings/cloudwatch-logs", {
+      method: "POST",
+      headers: headers,
+      body: JSON.stringify({ enabled: enabled }),
+    })
+      .then(parseJson)
+      .then(function (data) {
+        if (box) delete box.dataset.busy;
+        render(data);
+      })
+      .catch(function (err) {
+        if (box) {
+          delete box.dataset.busy;
+          box.checked = false;
+        }
+        if (hint) {
+          hint.textContent = err.message || String(err);
+          hint.className = "cw-hint cw-error";
+        }
+      });
   }
 
   function extra(fault) {
