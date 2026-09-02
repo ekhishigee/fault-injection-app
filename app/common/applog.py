@@ -30,14 +30,8 @@ def app_logs_enabled() -> bool:
 
 
 def logging_active(store: Any = None) -> bool:
-    if app_logs_enabled():
-        return True
-    if store is not None:
-        try:
-            return bool(store.settings().get("cloudwatch_logs"))
-        except Exception:
-            return False
-    return False
+    """Access + fault lines always go to the local file for the CW agent."""
+    return True
 
 
 def default_app_log_path() -> Path:
@@ -158,36 +152,6 @@ class AppLog:
     def bind_store(self, store: Any) -> None:
         self.settings_store = store
 
-    def cloudwatch_enabled(self) -> bool:
-        if self.settings_store is not None:
-            return bool(self.settings_store.settings().get("cloudwatch_logs"))
-        return any(_is_cw_sink(sink) for sink in self.sinks)
-
-    def set_cloudwatch(self, enabled: bool) -> dict[str, Any]:
-        from app.common.cwlogs import CloudWatchSink, probe_access
-
-        if not enabled:
-            self.sinks = [sink for sink in self.sinks if not _is_cw_sink(sink)]
-            if self.settings_store is not None:
-                self.settings_store.set_setting("cloudwatch_logs", False)
-                self.settings_store.set_setting("cloudwatch_error", "")
-            return {"ok": True, "enabled": False, "credentials": True, "error": ""}
-
-        probe = probe_access()
-        if not probe.get("ok"):
-            if self.settings_store is not None:
-                self.settings_store.set_setting("cloudwatch_logs", False)
-                self.settings_store.set_setting("cloudwatch_error", probe.get("error") or "")
-            self.sinks = [sink for sink in self.sinks if not _is_cw_sink(sink)]
-            return {**probe, "enabled": False}
-
-        if not any(_is_cw_sink(sink) for sink in self.sinks):
-            self.sinks.append(CloudWatchSink())
-        if self.settings_store is not None:
-            self.settings_store.set_setting("cloudwatch_logs", True)
-            self.settings_store.set_setting("cloudwatch_error", "")
-        return {**probe, "enabled": True}
-
     def emit(self, fault_id: str, phase: str, *, now: float | None = None) -> dict[str, Any]:
         now = time.time() if now is None else now
         with self._lock:
@@ -221,26 +185,12 @@ class AppLog:
                 self.store.append(entry)
             except Exception:
                 pass
-        self._sync_cloudwatch_sink()
         for sink in self.sinks:
             try:
                 sink(entry)
             except Exception:
                 continue
         return entry
-
-    def _sync_cloudwatch_sink(self) -> None:
-        if self.settings_store is None:
-            return
-        wanted = bool(self.settings_store.settings().get("cloudwatch_logs"))
-        has_sink = any(_is_cw_sink(sink) for sink in self.sinks)
-        if wanted and not has_sink:
-            from app.common.cwlogs import CloudWatchSink, credentials_available
-
-            if credentials_available():
-                self.sinks.append(CloudWatchSink())
-        if not wanted and has_sink:
-            self.sinks = [sink for sink in self.sinks if not _is_cw_sink(sink)]
 
     def heartbeat(self, active_ids: list[str], *, now: float | None = None) -> list[dict[str, Any]]:
         now = time.time() if now is None else now
@@ -295,10 +245,6 @@ def make_entry(msg: str, *, level: str = "info", now: float | None = None) -> di
         "req": req,
         "line": line,
     }
-
-
-def _is_cw_sink(sink: Any) -> bool:
-    return type(sink).__name__ == "CloudWatchSink"
 
 
 def _looks_bad(msg: str) -> bool:

@@ -19,14 +19,14 @@ CATALOG: dict[str, dict[str, str]] = {
     "cpu": {
         "label": FAULT_LABELS["cpu"],
         "group": "resource",
-        "effect": "Host CPU rises toward ~50% of available cores",
+        "effect": "Host CPU rises toward ~90% of available cores",
         "expect": "stress-ng stays running until Stop",
     },
     "memory": {
         "label": FAULT_LABELS["memory"],
         "group": "resource",
-        "effect": "RSS grows by a fixed 16 MiB",
-        "expect": "worker stays up until Stop (capped at 32 MiB)",
+        "effect": "RSS grows by a fixed 128 MiB",
+        "expect": "worker stays up until Stop (capped at 192 MiB)",
     },
     "disk": {
         "label": FAULT_LABELS["disk"],

@@ -40,11 +40,11 @@ On a laptop, Stop CPU when you are done — it keeps burning host/VM CPU until t
 
 ## Run on EC2 (Amazon Linux 2023)
 
-Step-by-step (security group, IAM, env, CloudWatch switch): **[docs/ec2.md](docs/ec2.md)**.
+Step-by-step (security group, env, local log file): **[docs/ec2.md](docs/ec2.md)**.
 
 ```bash
 sudo ./deploy/install.sh
-sudo nano /etc/demo-target/env          # AWS_REGION, optional keys — see deploy/env.example
+sudo nano /etc/demo-target/env          # see deploy/env.example
 sudo systemctl restart demo-controller demo-target
 ```
 
@@ -64,9 +64,7 @@ Lines are written only when:
 - a fault is ACTIVE (about every 15s)
 - a fault is stopped
 
-`DEMO_APP_LOGS=1` shows the Application logs panel. CloudWatch writing is a **dashboard switch** (header). Put keys in env (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`, or `AWS_PROFILE` / instance role). If you turn the switch on without credentials or Logs permission, the dashboard shows the error and the switch stays off.
-
-Log group defaults to `/fault-inject/app`. See [`.env.example`](.env.example). Do not commit keys.
+`DEMO_APP_LOGS=1` shows the Application logs panel. The same lines are always written to **`/var/lib/demo-faults/app.log`** (or `DEMO_APP_LOG_PATH`). Point the CloudWatch Agent at that file yourself — the app does not call CloudWatch. See [docs/aws.md](docs/aws.md).
 
 ## Architecture (short)
 

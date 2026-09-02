@@ -1,9 +1,12 @@
-"""Conservative resource caps for t4g.nano (2 vCPU, 0.5 GiB)."""
+"""Resource caps. Defaults are sized so CPU/memory faults are visible on a 2 vCPU box."""
 
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+
+# systemd CPUQuota is percent of *one* CPU. 180% ≈ 90% of a 2 vCPU instance.
+_CPU_QUOTA_PER_WORKER = 90
 
 
 def _env_int(name: str, default: int) -> int:
@@ -13,17 +16,21 @@ def _env_int(name: str, default: int) -> int:
     return int(raw)
 
 
+def cpu_quota_for_workers(workers: int) -> str:
+    return f"{_CPU_QUOTA_PER_WORKER * max(1, workers)}%"
+
+
 @dataclass(frozen=True)
 class Limits:
-    cpu_workers_default: int = 1
-    cpu_workers_max: int = 2
+    cpu_workers_default: int = 2
+    cpu_workers_max: int = 4
     cpu_timeout_sec: int = 90
-    cpu_quota: str = "70%"
+    cpu_quota: str = "180%"
 
-    mem_bytes_default: int = 16 * 1024 * 1024
-    mem_bytes_max: int = 32 * 1024 * 1024
+    mem_bytes_default: int = 128 * 1024 * 1024
+    mem_bytes_max: int = 192 * 1024 * 1024
     mem_timeout_sec: int = 60
-    mem_systemd_max: str = "48M"
+    mem_systemd_max: str = "256M"
 
     disk_fill_ratio: float = 0.85
     disk_timeout_sec: int = 180
@@ -37,11 +44,14 @@ class Limits:
     @classmethod
     def from_env(cls) -> Limits:
         base = cls()
+        ncpu = os.cpu_count() or 2
+        workers = _env_int("DEMO_CPU_WORKERS", ncpu)
+        quota = os.environ.get("DEMO_CPU_QUOTA") or cpu_quota_for_workers(workers)
         return cls(
-            cpu_workers_default=_env_int("DEMO_CPU_WORKERS", base.cpu_workers_default),
-            cpu_workers_max=_env_int("DEMO_CPU_WORKERS_MAX", base.cpu_workers_max),
+            cpu_workers_default=workers,
+            cpu_workers_max=_env_int("DEMO_CPU_WORKERS_MAX", max(ncpu, 4)),
             cpu_timeout_sec=_env_int("DEMO_CPU_TIMEOUT_SEC", base.cpu_timeout_sec),
-            cpu_quota=os.environ.get("DEMO_CPU_QUOTA", base.cpu_quota),
+            cpu_quota=quota,
             mem_bytes_default=_env_int("DEMO_MEM_BYTES", base.mem_bytes_default),
             mem_bytes_max=_env_int("DEMO_MEM_BYTES_MAX", base.mem_bytes_max),
             mem_timeout_sec=_env_int("DEMO_MEM_TIMEOUT_SEC", base.mem_timeout_sec),

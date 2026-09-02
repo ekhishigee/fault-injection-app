@@ -4,20 +4,20 @@ This program is meant to create faults. The limits exist so a small host stays r
 
 ## Hard rules
 
-- Never consume all memory. Default allocation is **16 MiB**, hard cap **32 MiB**, systemd `MemoryMax=48M`.
+- Never consume all memory. Default allocation is **128 MiB**, hard cap **192 MiB**, systemd `MemoryMax=256M`.
 - Never fill `/`. Disk faults write only inside a **256 MiB loop** mounted at `/mnt/demo-disk` (systemd). Compose caps the fill file at **32 MiB** unless `DEMO_DISK_FILL_CAP_BYTES=0`.
-- Never fork-bomb. CPU workers are 1 (max 2) with `CPUQuota=70%`.
+- Never fork-bomb. CPU workers default to the host core count (max 4) with `CPUQuota` ≈ 90% × workers.
 - Never stop `demo-controller` or `sshd` from the dashboard.
 - Never reboot the instance from the dashboard.
 - There is **no auto-recover**. The fault stays until Stop or Reset All.
 
-## Why 80–90% memory is unsafe
+## Why a 0.5 GiB box is tight
 
-On a 512 MiB instance, idle memory is already high after the OS, nginx, and two Flask processes. Driving the box to 80–90% can OOM-kill sshd or the controller.
+On a 512 MiB instance, idle memory is already high after the OS, nginx, and two Flask processes. A 128 MiB memory fault will show on the gauge and can still OOM-kill sshd or the controller if idle used is already above ~70%.
 
 The installer creates a **512 MiB disk-backed swap file**. That does not make a large memory fault safe.
 
-If idle used memory is already above ~75%, do **not** raise the fault size. Use a larger instance (1 GiB or more).
+Prefer **t4g.micro (1 GiB)** or larger if you want a clear memory spike without risking SSH.
 
 ## How long a fault stays
 
@@ -25,8 +25,8 @@ Until **Stop** or **Reset All**. The app does not clear the fault by itself.
 
 | Fault | Stays until | Still capped |
 | --- | --- | --- |
-| CPU | Stop | 1 worker (max 2), systemd `CPUQuota=70%` |
-| Memory | Stop | 16 MiB (max 32), `MemoryMax=48M` |
+| CPU | Stop | all cores (max 4), systemd `CPUQuota` ≈ 90% × workers |
+| Memory | Stop | 128 MiB (max 192), `MemoryMax=256M` |
 | Disk | Stop | loop mount / 32 MiB Compose cap |
 | HTTP 500 / Slow / Health | Stop | sleep cap 5s |
 | App / Nginx down | Stop or someone starts the service | cannot stop controller/sshd |

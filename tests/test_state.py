@@ -16,8 +16,8 @@ def test_set_fault_and_flag_round_trip(tmp_path):
     assert data["flags"]["http_500"] is True
     assert data["faults"]["http_500"]["status"] == "ACTIVE"
     assert data["faults"]["http_500"]["expires_at"] == 2
-    store.set_setting("cloudwatch_logs", True)
-    assert store.settings()["cloudwatch_logs"] is True
+    store.set_setting("note", "ok")
+    assert store.settings()["note"] == "ok"
 
 
 def test_expired_faults(tmp_path):

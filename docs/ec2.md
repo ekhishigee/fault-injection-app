@@ -17,32 +17,12 @@ Use **systemd** (`deploy/install.sh`). Do not run Docker Compose on a nano (0.5 
 - **80** — target via nginx (`/health`, `/api/demo`)
 - **8080** — dashboard (not behind nginx)
 
-**IAM instance role** (preferred over access keys):
+**IAM instance role** (only if you ship logs/metrics with the CloudWatch Agent or `demo-probe`):
 
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "logs:CreateLogGroup",
-        "logs:CreateLogStream",
-        "logs:PutLogEvents",
-        "logs:DescribeLogStreams"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Effect": "Allow",
-      "Action": ["cloudwatch:PutMetricData"],
-      "Resource": "*"
-    }
-  ]
-}
-```
+- Attach `CloudWatchAgentServerPolicy` for the agent.
+- Add `cloudwatch:PutMetricData` if you enable `demo-probe.timer`.
 
-Optional: attach `CloudWatchAgentServerPolicy` if you also install the CloudWatch Agent.
+The app itself does not call CloudWatch. It only writes `/var/lib/demo-faults/app.log`.
 
 Tag the instance `App=demo-target` only if you use the example SSM documents.
 
@@ -100,32 +80,31 @@ sudo systemctl restart demo-controller demo-target
 | `DEMO_RUNTIME=systemd` | yes (installer sets it) | Fault backend is systemd, not Compose |
 | `DEMO_DISK_MOUNT=/mnt/demo-disk` | yes | Isolated disk for Disk High |
 | `DEMO_APP_LOGS=1` | recommended | Application logs panel on the dashboard |
-| `AWS_REGION` | for CloudWatch | e.g. `ap-northeast-1` |
-| `DEMO_CW_LOG_GROUP` | optional | default `/fault-inject/app` |
-| `DEMO_CW_LOG_STREAM` | optional | default is the hostname |
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | only without an instance role | Do not commit. Prefer the IAM role |
-| `AWS_SESSION_TOKEN` | only for temporary keys | |
-| `AWS_PROFILE` | rare | named profile on the box |
+| `DEMO_APP_LOG_PATH` | optional | default `/var/lib/demo-faults/app.log` |
 
-CloudWatch **on/off is not an env flag**. After env + restart, open the dashboard and use the **CloudWatch logs** switch. If keys/role or `logs:PutLogEvents` are missing, the switch stays off and the error is shown next to it.
+Do not put AWS keys in this file for logs. The app does not talk to CloudWatch.
 
-Leave `DEMO_CLOUDWATCH_LOGS` unset. It is unused.
+## 4. Local log file (CloudWatch Agent)
 
-## 4. CloudWatch logs (after env)
+Lines always go to **`/var/lib/demo-faults/app.log`** (JSONL). The dashboard switch is gone.
 
-1. Set `AWS_REGION` (and keys only if there is no role).
-2. `sudo systemctl restart demo-controller demo-target`
-3. Open `http://<ip>:8080/?token=...`
-4. Turn **CloudWatch logs** on.
-5. Trigger a fault or hit `http://<ip>/health` — lines go to `/fault-inject/app`.
+Point the CloudWatch Agent at that file yourself. An example collect block is in `deploy/cloudwatch/amazon-cloudwatch-agent.json`:
 
-## 5. Optional extras
+```text
+/var/lib/demo-faults/app.log  →  log group /fault-inject/app
+```
 
-Host metrics / example alarms: [aws.md](aws.md)
+Then:
 
 ```bash
 sudo ./deploy/cloudwatch/install-agent.sh
 ```
+
+Or edit `/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json` and restart the agent.
+
+## 5. Optional extras
+
+Host metrics / example alarms: [aws.md](aws.md).
 
 ## 6. Update
 

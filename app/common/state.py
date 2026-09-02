@@ -61,10 +61,7 @@ def empty_fault() -> dict[str, Any]:
 
 
 def empty_settings() -> dict[str, Any]:
-    return {
-        "cloudwatch_logs": False,
-        "cloudwatch_error": "",
-    }
+    return {}
 
 
 def empty_state() -> dict[str, Any]:
@@ -184,8 +181,7 @@ def _normalize(data: dict[str, Any]) -> dict[str, Any]:
     for name in FLAG_FAULTS:
         base["flags"][name] = bool(flags.get(name, False))
     incoming_settings = data.get("settings") if isinstance(data.get("settings"), dict) else {}
-    base["settings"]["cloudwatch_logs"] = bool(incoming_settings.get("cloudwatch_logs", False))
-    base["settings"]["cloudwatch_error"] = str(incoming_settings.get("cloudwatch_error") or "")
+    base["settings"] = dict(incoming_settings)
     return base
 
 

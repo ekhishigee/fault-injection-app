@@ -50,7 +50,7 @@ Resources:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: DemoApp-Memory-High
-      AlarmDescription: Controlled +16 MiB memory fault. Threshold must be idle plus a small delta.
+      AlarmDescription: Controlled +128 MiB memory fault. Threshold must be idle plus a visible delta.
       Namespace: CWAgent
       MetricName: mem_used_percent
       Dimensions:

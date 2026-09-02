@@ -1,6 +1,5 @@
 from app.common.applog import AppLog, FileLogStore, access_message, format_entry
 from app.common.catalog import LOG_LINES
-from app.common.cwlogs import CloudWatchSink, credentials_available
 from app.common.events import EventStore
 from app.common.limits import Limits
 from app.common.state import StateStore
@@ -61,92 +60,21 @@ def test_heartbeat_waits_interval(tmp_path):
     assert "rss" in applog.list()[-1]["msg"].lower() or "gc" in applog.list()[-1]["msg"].lower()
 
 
-def test_from_env_does_not_attach_cloudwatch(monkeypatch):
-    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIATEST")
-    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "secret")
-    assert AppLog.from_env().sinks == []
+def test_from_env_writes_local_file_only(monkeypatch, tmp_path):
+    monkeypatch.setenv("DEMO_APP_LOG_PATH", str(tmp_path / "app.log"))
+    log = AppLog.from_env()
+    assert log.sinks == []
+    assert log.store is not None
+    log.emit_access("GET", "/health", 200, 4)
+    assert (tmp_path / "app.log").exists()
 
 
-def test_switch_on_without_credentials_stays_off(tmp_path, monkeypatch):
-    monkeypatch.delenv("AWS_ACCESS_KEY_ID", raising=False)
-    monkeypatch.delenv("AWS_SECRET_ACCESS_KEY", raising=False)
-    monkeypatch.delenv("AWS_PROFILE", raising=False)
-    monkeypatch.setattr("app.common.cwlogs.credentials_available", lambda: False)
+def test_status_has_no_cloudwatch_switch(tmp_path):
     engine = make_engine(tmp_path)
     client = create_controller(engine=engine, applog=engine.applog).test_client()
-    response = client.post(
-        "/api/settings/cloudwatch-logs",
-        json={"enabled": True},
-    )
-    assert response.status_code == 400
-    body = response.get_json()
-    assert body["cloudwatch_logs"]["enabled"] is False
-    assert "credential" in (body.get("error") or "").lower()
-    assert body["cloudwatch_logs"]["error"]
-
-
-def test_switch_off_succeeds(tmp_path):
-    engine = make_engine(tmp_path)
-    client = create_controller(engine=engine, applog=engine.applog).test_client()
-    engine.store.set_setting("cloudwatch_logs", True)
-    response = client.post(
-        "/api/settings/cloudwatch-logs",
-        json={"enabled": False},
-    )
-    assert response.status_code == 200
-    assert response.get_json()["cloudwatch_logs"]["enabled"] is False
-
-
-def test_switch_on_with_probe_ok(tmp_path, monkeypatch):
-    monkeypatch.setattr("app.common.cwlogs.credentials_available", lambda: True)
-    monkeypatch.setattr(
-        "app.common.cwlogs.probe_access",
-        lambda: {
-            "ok": True,
-            "credentials": True,
-            "error": "",
-            "group": "/fault-inject/app",
-            "region": "us-east-1",
-        },
-    )
-    engine = make_engine(tmp_path)
-    client = create_controller(engine=engine, applog=engine.applog).test_client()
-    response = client.post(
-        "/api/settings/cloudwatch-logs",
-        json={"enabled": True},
-    )
-    assert response.status_code == 200
-    assert response.get_json()["cloudwatch_logs"]["enabled"] is True
-
-
-def test_credentials_keys_or_profile(monkeypatch):
-    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIATEST")
-    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "secret")
-    assert credentials_available() is True
-    monkeypatch.delenv("AWS_ACCESS_KEY_ID")
-    monkeypatch.delenv("AWS_SECRET_ACCESS_KEY")
-    monkeypatch.setenv("AWS_PROFILE", "demo")
-    assert credentials_available() is True
-
-
-def test_cloudwatch_sink_puts_line():
-    captured = []
-
-    class FakeClient:
-        def create_log_group(self, **kwargs):
-            return None
-
-        def create_log_stream(self, **kwargs):
-            return None
-
-        def put_log_events(self, **kwargs):
-            captured.append(kwargs)
-            return {"nextSequenceToken": "2"}
-
-    sink = CloudWatchSink(group="/fault-inject/app", stream="box", client=FakeClient())
-    sink({"ts": 1000.0, "line": 'ts=... msg="heap +14MiB after batch; rss 91MiB"', "msg": "x"})
-    assert captured[0]["logGroupName"] == "/fault-inject/app"
-    assert "heap" in captured[0]["logEvents"][0]["message"]
+    body = client.get("/api/status").get_json()
+    assert "cloudwatch_logs" not in body
+    assert client.post("/api/settings/cloudwatch-logs", json={"enabled": True}).status_code == 404
 
 
 def test_api_logs_hidden_when_flag_off(tmp_path, monkeypatch):

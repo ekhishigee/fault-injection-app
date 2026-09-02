@@ -36,9 +36,16 @@ Set the memory threshold to **idle used percent + about 8**, not 80–90.
 
 ## Application logs
 
-Put AWS credentials in env (`/etc/demo-target/env` or Compose `.env`). Turn **CloudWatch logs** on from the dashboard. The controller probes CreateLogGroup / CreateLogStream; missing keys or `AccessDenied` stay visible on the switch and writing stays off.
+The app writes JSONL to **`/var/lib/demo-faults/app.log`**. It does not call CloudWatch.
 
-Override group/stream with `DEMO_CW_LOG_GROUP` / `DEMO_CW_LOG_STREAM`. The local panel is `DEMO_APP_LOGS=1`.
+Ship that file with the CloudWatch Agent. The example config already includes:
+
+```text
+file_path: /var/lib/demo-faults/app.log
+log_group_name: /fault-inject/app
+```
+
+`DEMO_APP_LOGS=1` only shows the same lines on the dashboard.
 
 ## Example SSM documents
 

@@ -18,7 +18,7 @@ def test_start_and_stop_cpu(tmp_path):
     engine = make_engine(tmp_path)
     status = engine.start("cpu")
     assert status["faults"]["cpu"]["status"] == FaultStatus.ACTIVE.value
-    assert ["cpu-start", "1"] in engine.runner.calls
+    assert ["cpu-start", "2"] in engine.runner.calls
     status = engine.stop("cpu")
     assert status["faults"]["cpu"]["status"] == FaultStatus.IDLE.value
     assert ["cpu-stop"] in engine.runner.calls
@@ -28,7 +28,7 @@ def test_start_and_stop_cpu(tmp_path):
 def test_memory_start_uses_clamped_bytes(tmp_path):
     engine = make_engine(tmp_path)
     engine.start("memory")
-    assert ["memory-start", str(16 * 1024 * 1024)] in engine.runner.calls
+    assert ["memory-start", str(128 * 1024 * 1024)] in engine.runner.calls
 
 
 def test_failed_start_marks_failed(tmp_path):

@@ -12,10 +12,9 @@ DISK_FILL="${DISK_MOUNT}/fill.bin"
 CPU_TIMEOUT="${DEMO_CPU_TIMEOUT_SEC:-90}"
 MEM_TIMEOUT="${DEMO_MEM_TIMEOUT_SEC:-60}"
 DISK_TIMEOUT="${DEMO_DISK_TIMEOUT_SEC:-180}"
-CPU_QUOTA="${DEMO_CPU_QUOTA:-70%}"
-MEM_MAX="${DEMO_MEM_SYSTEMD_MAX:-48M}"
-CPU_WORKERS_MAX="${DEMO_CPU_WORKERS_MAX:-2}"
-MEM_BYTES_MAX="${DEMO_MEM_BYTES_MAX:-33554432}"
+MEM_MAX="${DEMO_MEM_SYSTEMD_MAX:-256M}"
+CPU_WORKERS_MAX="${DEMO_CPU_WORKERS_MAX:-4}"
+MEM_BYTES_MAX="${DEMO_MEM_BYTES_MAX:-201326592}"
 DISK_FILL_CAP="${DEMO_DISK_FILL_CAP_BYTES:-0}"
 STRESS_NG="${STRESS_NG:-/usr/bin/stress-ng}"
 PID_DIR="${DEMO_FAULT_PID_DIR:-/tmp/demo-fault-pids}"
@@ -177,18 +176,27 @@ print(max(1, need))
 PY
 }
 
+cpu_quota_for() {
+  local workers="$1"
+  if [[ -n "${DEMO_CPU_QUOTA:-}" ]]; then
+    echo "$DEMO_CPU_QUOTA"
+    return
+  fi
+  echo "$((90 * workers))%"
+}
+
 cpu_start_systemd() {
   local workers
-  workers="$(clamp_int "${1:-1}" 1 "$CPU_WORKERS_MAX")"
+  workers="$(clamp_int "${1:-2}" 1 "$CPU_WORKERS_MAX")"
   clear_unit "$CPU_UNIT"
   systemd-run --unit=demo-fault-cpu --collect \
-    --property="CPUQuota=${CPU_QUOTA}" \
+    --property="CPUQuota=$(cpu_quota_for "$workers")" \
     "$STRESS_NG" --cpu "$workers"
 }
 
 memory_start_systemd() {
   local bytes
-  bytes="$(clamp_int "${1:-16777216}" 1 "$MEM_BYTES_MAX")"
+  bytes="$(clamp_int "${1:-134217728}" 1 "$MEM_BYTES_MAX")"
   clear_unit "$MEM_UNIT"
   systemd-run --unit=demo-fault-mem --collect \
     --property="MemoryMax=${MEM_MAX}" \
@@ -208,13 +216,13 @@ disk_start_common() {
 
 cpu_start_compose() {
   local workers
-  workers="$(clamp_int "${1:-1}" 1 "$CPU_WORKERS_MAX")"
+  workers="$(clamp_int "${1:-2}" 1 "$CPU_WORKERS_MAX")"
   pid_start cpu "$STRESS_NG" --cpu "$workers"
 }
 
 memory_start_compose() {
   local bytes
-  bytes="$(clamp_int "${1:-16777216}" 1 "$MEM_BYTES_MAX")"
+  bytes="$(clamp_int "${1:-134217728}" 1 "$MEM_BYTES_MAX")"
   pid_start memory "$STRESS_NG" --vm 1 --vm-bytes "$bytes" --vm-keep
 }
 
@@ -242,7 +250,7 @@ shift || true
 
 case "$cmd" in
   cpu-start)
-    if [[ "$RUNTIME" == "compose" ]]; then cpu_start_compose "${1:-1}"; else cpu_start_systemd "${1:-1}"; fi
+    if [[ "$RUNTIME" == "compose" ]]; then cpu_start_compose "${1:-2}"; else cpu_start_systemd "${1:-2}"; fi
     ;;
   cpu-stop)
     if [[ "$RUNTIME" == "compose" ]]; then pid_stop cpu; else clear_unit "$CPU_UNIT"; fi
@@ -251,7 +259,7 @@ case "$cmd" in
     if [[ "$RUNTIME" == "compose" ]]; then pid_status cpu; else unit_status "$CPU_UNIT"; fi
     ;;
   memory-start)
-    if [[ "$RUNTIME" == "compose" ]]; then memory_start_compose "${1:-16777216}"; else memory_start_systemd "${1:-16777216}"; fi
+    if [[ "$RUNTIME" == "compose" ]]; then memory_start_compose "${1:-134217728}"; else memory_start_systemd "${1:-134217728}"; fi
     ;;
   memory-stop)
     if [[ "$RUNTIME" == "compose" ]]; then pid_stop memory; else clear_unit "$MEM_UNIT"; fi
