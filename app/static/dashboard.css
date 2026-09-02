@@ -88,6 +88,17 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   letter-spacing: 0.04em;
 }
 .last-when { font-size: 0.78rem; color: var(--muted); }
+.log-pane {
+  margin: 0;
+  max-height: 280px;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 .token-box input { margin: 0 8px; padding: 6px; }
 @media (max-width: 800px) {
   .gauges { grid-template-columns: 1fr; }

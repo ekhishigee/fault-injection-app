@@ -5,6 +5,7 @@ from pathlib import Path
 
 from flask import Flask, jsonify, make_response, render_template, request
 
+from app.common.applog import AppLog, app_logs_enabled, get_applog
 from app.common.catalog import catalog_payload
 from app.common.events import EventStore
 from app.common.limits import Limits
@@ -20,10 +21,14 @@ def create_app(
     engine: FaultEngine | None = None,
     limits: Limits | None = None,
     events: EventStore | None = None,
+    applog: AppLog | None = None,
 ) -> Flask:
     limits = limits or Limits.from_env()
     events = events or (engine.events if engine else EventStore())
-    engine = engine or FaultEngine(store=StateStore(), limits=limits, events=events)
+    applog = applog or (engine.applog if engine else get_applog())
+    engine = engine or FaultEngine(
+        store=StateStore(), limits=limits, events=events, applog=applog
+    )
     app = Flask(
         __name__,
         template_folder=str(ROOT / "templates"),
@@ -32,6 +37,7 @@ def create_app(
     app.config["ENGINE"] = engine
     app.config["LIMITS"] = limits
     app.config["EVENTS"] = events
+    app.config["APPLOG"] = applog
 
     @app.get("/")
     def dashboard():
@@ -53,6 +59,14 @@ def create_app(
     @require_token
     def api_status():
         return jsonify(_status_payload(engine, events, limits))
+
+    @app.get("/api/logs")
+    @require_token
+    def api_logs():
+        if not app_logs_enabled():
+            return jsonify({"error": "app logs disabled"}), 404
+        limit = int(request.args.get("limit", "80"))
+        return jsonify({"logs": applog.list(limit=limit)})
 
     @app.get("/api/events")
     @require_token
@@ -108,6 +122,9 @@ def _status_payload(engine: FaultEngine, events: EventStore, limits: Limits) -> 
     payload["catalog"] = catalog_payload()
     payload["events"] = events.list(limit=40)
     payload["runtime"] = os.environ.get("DEMO_RUNTIME", "systemd")
+    payload["app_logs_enabled"] = app_logs_enabled()
+    if payload["app_logs_enabled"]:
+        payload["app_logs"] = engine.applog.list(limit=80)
     return payload
 
 

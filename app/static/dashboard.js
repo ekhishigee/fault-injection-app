@@ -46,6 +46,7 @@
     fillFaultTable(appBody, APP, data.faults || {}, catalog);
     fillServices(data.services || {}, data.faults || {}, catalog);
     fillHistory(data.events || [], catalog);
+    fillAppLogs(data);
   }
 
   function fillFaultTable(tbody, ids, faults, catalog) {
@@ -123,6 +124,26 @@
         "<td class=\"detail\">" + escapeHtml(event.detail || event.source || "") + "</td>";
       historyBody.appendChild(tr);
     });
+  }
+
+  function fillAppLogs(data) {
+    const section = document.getElementById("app-logs-section");
+    const pane = document.getElementById("app-logs");
+    if (!section || !pane) return;
+    if (!data.app_logs_enabled) {
+      section.hidden = true;
+      return;
+    }
+    section.hidden = false;
+    const rows = data.app_logs || [];
+    if (!rows.length) {
+      pane.textContent = "No application lines yet.";
+      return;
+    }
+    pane.textContent = rows.map(function (row) {
+      return row.line || row.msg || "";
+    }).join("\n");
+    pane.scrollTop = pane.scrollHeight;
   }
 
   function extra(fault) {

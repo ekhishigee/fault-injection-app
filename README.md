@@ -68,7 +68,18 @@ Target health:
 http://<host>/health
 ```
 
-Optional host metrics and example alarms: [docs/aws.md](docs/aws.md).
+Optional host metrics, example alarms, and application logs: [docs/aws.md](docs/aws.md).
+
+## Application logs
+
+Operator history (`started` / `stopped`) stays on the dashboard. A second channel writes **application-looking** lines (runqueue, heap, 5xx, latency) so a reader can infer the fault without being told.
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `DEMO_APP_LOGS=1` | off | `GET /api/logs` and an Application logs panel |
+| `DEMO_CLOUDWATCH_LOGS=1` | off | Same lines to CloudWatch Logs **if** AWS credentials exist (`AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`, `AWS_PROFILE`, or an instance role) |
+
+Log group defaults to `/fault-inject/app`. See [`.env.example`](.env.example). Do not commit keys.
 
 ## Architecture (short)
 

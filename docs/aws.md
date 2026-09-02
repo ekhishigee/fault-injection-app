@@ -32,6 +32,14 @@ aws cloudformation deploy \
 
 Set the memory threshold to **idle used percent + about 8**, not 80–90.
 
+## Application logs
+
+Set `DEMO_CLOUDWATCH_LOGS=1` plus credentials (keys, profile, or instance role). The controller writes realistic app lines to `/fault-inject/app` (override with `DEMO_CW_LOG_GROUP` / `DEMO_CW_LOG_STREAM`). The dashboard panel is a separate flag: `DEMO_APP_LOGS=1`.
+
+If the CloudWatch flag is on but credentials or boto3 fail, local/dashboard logs still work.
+
+On systemd, add the flags to `/etc/demo-target/env` and restart `demo-controller`.
+
 ## Example SSM documents
 
 `deploy/ssm/` contains optional Automation documents that start nginx, start the target, or stop resource faults. Tag the instance `App=demo-target` if you use the shipped target filters.

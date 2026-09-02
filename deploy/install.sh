@@ -70,6 +70,10 @@ if [[ ! -f "$ENV_PATH" ]]; then
   cat > "$ENV_PATH" <<EOF
 DEMO_RUNTIME=systemd
 DEMO_DISK_MOUNT=${DISK_MOUNT}
+# DEMO_APP_LOGS=1
+# DEMO_CLOUDWATCH_LOGS=1
+# AWS_REGION=ap-northeast-1
+# DEMO_CW_LOG_GROUP=/fault-inject/app
 EOF
   chmod 644 "$ENV_PATH"
 fi

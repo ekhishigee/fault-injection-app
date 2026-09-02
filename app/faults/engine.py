@@ -6,6 +6,7 @@ import os
 import time
 from typing import Any
 
+from app.common.applog import AppLog, get_applog
 from app.common.catalog import FAULT_LABELS
 from app.common.events import EventStore
 from app.common.limits import Limits
@@ -27,17 +28,20 @@ class FaultEngine:
         limits: Limits | None = None,
         runner: CommandRunner | None = None,
         events: EventStore | None = None,
+        applog: AppLog | None = None,
     ) -> None:
         self.store = store or StateStore()
         self.limits = limits or Limits.from_env()
         self.runner = runner or FaultCtlRunner()
         self.events = events or EventStore()
+        self.applog = applog or get_applog()
 
     def status(self) -> dict[str, Any]:
         self.refresh()
         data = self.store.read()
         now = time.time()
         faults = {}
+        active_ids: list[str] = []
         for fault_id in FAULT_IDS:
             item = data["faults"][fault_id]
             expires_at = item.get("expires_at")
@@ -45,6 +49,7 @@ class FaultEngine:
             running_for = None
             if item["status"] == FaultStatus.ACTIVE.value and started_at is not None:
                 running_for = max(0, int(now - float(started_at)))
+                active_ids.append(fault_id)
             faults[fault_id] = {
                 "id": fault_id,
                 "label": FAULT_LABELS[fault_id],
@@ -55,6 +60,7 @@ class FaultEngine:
                 "running_for": running_for,
                 "error": item.get("error"),
             }
+        self.applog.heartbeat(active_ids, now=now)
         return {
             "faults": faults,
             "flags": data["flags"],
@@ -78,6 +84,7 @@ class FaultEngine:
             else:
                 self._start_flag(fault_id)
             self._record(fault_id, "trigger", "started")
+            self.applog.emit(fault_id, "start")
         except FaultError as exc:
             self.store.set_fault(fault_id, status=FaultStatus.FAILED, error=str(exc))
             self._record(fault_id, "trigger", "failed", str(exc))
@@ -93,6 +100,7 @@ class FaultEngine:
             else:
                 self._stop_flag(fault_id)
             self._record(fault_id, action, "stopped", source=source)
+            self.applog.emit(fault_id, "stop")
         except FaultError as exc:
             self.store.set_fault(
                 fault_id,
@@ -105,6 +113,11 @@ class FaultEngine:
 
     def reset_all(self) -> dict[str, Any]:
         errors: list[str] = []
+        was_active = [
+            fault_id
+            for fault_id in FAULT_IDS
+            if self.store.get_fault(fault_id)["status"] == FaultStatus.ACTIVE.value
+        ]
         for fault_id in FAULT_IDS:
             try:
                 if fault_id in RESOURCE_FAULTS:
@@ -123,6 +136,10 @@ class FaultEngine:
                 )
                 self._record(fault_id, "reset", "failed", str(exc))
         self._record("*", "reset", "stopped" if not errors else "failed", "; ".join(errors))
+        for fault_id in was_active:
+            self.applog.emit(fault_id, "stop")
+        if was_active:
+            self.applog.emit("*", "stop")
         return self.status()
 
     def expire_due(self) -> list[str]:
@@ -181,6 +198,7 @@ class FaultEngine:
                 expires_at=None,
             )
             self._record(fault_id, "service_stop", "started")
+            self.applog.emit(fault_id, "start")
         else:
             self.store.set_fault(fault_id, status=FaultStatus.IDLE)
             self._record(
@@ -188,6 +206,7 @@ class FaultEngine:
                 "service_restart" if action == "restart" else "service_start",
                 "stopped",
             )
+            self.applog.emit(fault_id, "stop")
         return self.status()
 
     def _start_resource(self, fault_id: str) -> None:
