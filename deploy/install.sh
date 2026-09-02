@@ -19,8 +19,12 @@ TOKEN_PATH="${TOKEN_DIR}/token"
 ENV_PATH="${TOKEN_DIR}/env"
 
 echo "==> installing packages"
-# AL2023 has no python3-venv package; venv ships inside python3 / python3.11.
-dnf install -y python3 python3-pip nginx stress-ng util-linux e2fsprogs curl rsync
+# AL2023: no python3-venv package (venv is in python3). Do not install
+# curl — the AMI already has curl-minimal, which conflicts with curl.
+dnf install -y python3 python3-pip nginx stress-ng util-linux e2fsprogs rsync
+if ! command -v curl >/dev/null 2>&1; then
+  dnf install -y curl-minimal || dnf install -y curl --allowerasing
+fi
 dnf install -y python3.11 2>/dev/null || true
 dnf install -y awscli || dnf install -y aws-cli || true
 
