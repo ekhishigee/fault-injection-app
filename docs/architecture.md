@@ -14,7 +14,7 @@ Python + Flask + Waitress (1 process, 2 threads each). History is SQLite (`event
 
 **Laptop:** `docker compose up --build`. Resource faults use `stress-ng` inside the controller container. Target/nginx stop uses the Docker Engine API on the mounted socket.
 
-**EC2 / Amazon Linux 2023:** `sudo ./deploy/install.sh`. Resource faults use `systemd-run` + `stress-ng` (`CPUQuota`, `MemoryMax`). Prefer this on small instances (0.5 GiB). Do not run Compose and the systemd install on the same host.
+**EC2 / Amazon Linux 2023:** `sudo ./deploy/install.sh`. Full steps: [ec2.md](ec2.md). Resource faults use `systemd-run` + `stress-ng` (`CPUQuota`, `MemoryMax`). Prefer this on small instances (0.5 GiB). Do not run Compose and the systemd install on the same host.
 
 `demo-fault-ctl` picks the backend from `DEMO_RUNTIME` (`systemd` or `compose`). It does **not** treat a host `/var/run/docker.sock` as Compose — that would break an EC2 box that also has Docker installed.
 

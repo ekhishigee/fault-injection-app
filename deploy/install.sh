@@ -67,14 +67,8 @@ fi
 chmod 640 "$TOKEN_PATH"
 chown root:demo "$TOKEN_PATH"
 if [[ ! -f "$ENV_PATH" ]]; then
-  cat > "$ENV_PATH" <<EOF
-DEMO_RUNTIME=systemd
-DEMO_DISK_MOUNT=${DISK_MOUNT}
-# DEMO_APP_LOGS=1
-# DEMO_CLOUDWATCH_LOGS=1
-# AWS_REGION=ap-northeast-1
-# DEMO_CW_LOG_GROUP=/fault-inject/app
-EOF
+  sed "s|^DEMO_DISK_MOUNT=.*|DEMO_DISK_MOUNT=${DISK_MOUNT}|" \
+    "${INSTALL_DIR}/deploy/env.example" > "$ENV_PATH"
   chmod 644 "$ENV_PATH"
 fi
 touch "${STATE_DIR}/state.json"
@@ -140,5 +134,7 @@ echo "  Dashboard:  http://<host>:8080/?token=$(cat "$TOKEN_PATH")"
 echo "  Target:     http://<host>/health"
 echo "  Token file: ${TOKEN_PATH}"
 echo
+echo "Env file:   ${ENV_PATH}   (see docs/ec2.md)"
 echo "Open security-group ports 80 and 8080 from your admin network."
+echo "Then: sudo systemctl restart demo-controller demo-target"
 echo "Optional AWS metrics: sudo ./deploy/cloudwatch/install-agent.sh"

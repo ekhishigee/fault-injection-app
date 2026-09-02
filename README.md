@@ -40,35 +40,18 @@ On a laptop, Stop CPU when you are done — it keeps burning host/VM CPU until t
 
 ## Run on EC2 (Amazon Linux 2023)
 
-Use the systemd installer, not Compose, on small instances (t4g.nano / 0.5 GiB). Compose plus Docker Engine plus two apps plus nginx does not fit that RAM comfortably.
-
-Security group: **22** (or SSM), **80**, and **8080** from your admin network only.
+Step-by-step (security group, IAM, env, CloudWatch switch): **[docs/ec2.md](docs/ec2.md)**.
 
 ```bash
 sudo ./deploy/install.sh
+sudo nano /etc/demo-target/env          # AWS_REGION, optional keys — see deploy/env.example
+sudo systemctl restart demo-controller demo-target
 ```
 
-The installer:
+Dashboard: `http://<host>:8080/?token=$(sudo cat /etc/demo-target/token)`  
+Target: `http://<host>/health`
 
-- installs Python 3, nginx, `stress-ng`
-- creates user `demo`, a venv, and a sudoers allowlist
-- adds a 512 MiB swap file
-- creates a 256 MiB loop filesystem at `/mnt/demo-disk` (disk faults never fill `/`)
-- enables `demo-controller`, `demo-target`, nginx, and an optional metric probe
-
-Dashboard (token is printed by the installer):
-
-```text
-http://<host>:8080/?token=<token>
-```
-
-Target health:
-
-```text
-http://<host>/health
-```
-
-Optional host metrics, example alarms, and application logs: [docs/aws.md](docs/aws.md).
+Do not use Compose on t4g.nano. Optional host metrics: [docs/aws.md](docs/aws.md).
 
 ## Application logs
 

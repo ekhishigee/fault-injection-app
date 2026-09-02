@@ -1,5 +1,7 @@
 # Optional AWS extras
 
+EC2 install and `/etc/demo-target/env`: [ec2.md](ec2.md).
+
 The app works without AWS. These files are only if you want host metrics or example alarms on EC2.
 
 ## CloudWatch Agent
