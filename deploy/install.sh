@@ -19,7 +19,8 @@ TOKEN_PATH="${TOKEN_DIR}/token"
 ENV_PATH="${TOKEN_DIR}/env"
 
 echo "==> installing packages"
-dnf install -y python3 python3-pip python3-venv nginx stress-ng util-linux e2fsprogs curl rsync
+# AL2023 has no python3-venv package; venv ships inside python3 / python3.11.
+dnf install -y python3 python3-pip nginx stress-ng util-linux e2fsprogs curl rsync
 dnf install -y python3.11 2>/dev/null || true
 dnf install -y awscli || dnf install -y aws-cli || true
 

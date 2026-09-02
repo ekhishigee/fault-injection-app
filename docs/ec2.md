@@ -57,6 +57,8 @@ cd fault-injection-app
 sudo ./deploy/install.sh
 ```
 
+Amazon Linux 2023 has no `python3-venv` package. The installer uses `python3 -m venv` from the main Python package.
+
 The installer prints the dashboard URL and token.
 
 ```text
