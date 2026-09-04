@@ -2,7 +2,7 @@ from app.common.applog import AppLog, FileLogStore, access_message, format_entry
 from app.common.catalog import LOG_LINES
 from app.common.events import EventStore
 from app.common.limits import Limits
-from app.common.state import StateStore
+from app.common.state import FAULT_IDS, StateStore
 from app.controller.app import create_app as create_controller
 from app.faults.engine import FaultEngine
 from app.faults.runner import FakeRunner
@@ -33,30 +33,57 @@ def test_log_catalog_has_no_giveaway_words():
         assert word not in blob, word
 
 
+SCENARIO_MARKERS = {
+    "cpu": ("checkout queue", "login wave", "search rps"),
+    "memory": ("session cache", "report batch", "rss"),
+    "disk": ("export", "tmp volume", "/var/lib/app/tmp"),
+    "app_down": ("8081", "connection refused"),
+    "nginx_down": ("502", ":80"),
+    "http_500": ("checkout handler panic", "500"),
+    "slow_api": ("inventory lookup", "3120ms"),
+    "health_fail": ("cache", "503"),
+}
+
+
 def test_cpu_start_and_stop_are_realistic(tmp_path):
     applog = AppLog()
     engine = make_engine(tmp_path, applog)
     engine.start("cpu")
-    start_line = applog.list()[-1]["line"].lower()
-    assert "cpu" not in start_line
-    assert "started" not in start_line
-    assert "runqueue" in start_line or "scheduler" in start_line or "hash job" in start_line
+    start_blob = " ".join(item["line"] for item in applog.list()).lower()
+    assert "cpu" not in start_blob
+    assert "started" not in start_blob
+    assert "checkout" in start_blob and "login wave" in start_blob
+    assert applog.list()[0]["level"] == "warn"
     engine.stop("cpu")
     stop_line = applog.list()[-1]["line"].lower()
     assert "cpu" not in stop_line
     assert "started" not in stop_line
-    assert applog.list()[-1]["msg"] != applog.list()[0]["msg"] or "idle" in stop_line or "lag 2ms" in stop_line
+    assert "idle" in stop_line or "p95 11ms" in stop_line
+
+
+def test_each_fault_writes_its_scenario(tmp_path):
+    applog = AppLog()
+    engine = make_engine(tmp_path, applog)
+    for fault_id in FAULT_IDS:
+        before = len(applog.list())
+        engine.start(fault_id)
+        start_msgs = [item["msg"] for item in applog.list()[before:]]
+        blob = " ".join(start_msgs).lower()
+        for marker in SCENARIO_MARKERS[fault_id]:
+            assert marker.lower() in blob, f"{fault_id} missing {marker!r} in {blob!r}"
+        engine.stop(fault_id)
 
 
 def test_heartbeat_waits_interval(tmp_path):
     applog = AppLog(heartbeat_sec=30)
     engine = make_engine(tmp_path, applog)
     engine.start("memory")
-    assert len(applog.list()) == 1
+    start_count = len(LOG_LINES["memory"]["start"])
+    assert len(applog.list()) == start_count
     engine.status()
-    assert len(applog.list()) == 1
+    assert len(applog.list()) == start_count
     applog.heartbeat(["memory"], now=applog.list()[0]["ts"] + 31)
-    assert len(applog.list()) == 2
+    assert len(applog.list()) == start_count + 1
     assert "rss" in applog.list()[-1]["msg"].lower() or "gc" in applog.list()[-1]["msg"].lower()
 
 
@@ -112,7 +139,7 @@ def test_format_entry_has_ts_and_req():
 def test_target_access_is_logged(tmp_path):
     applog = AppLog()
     store = StateStore(tmp_path / "state.json")
-    client = create_target(store=store, limits=Limits(), applog=applog).test_client()
+    client = create_target(store=store, limits=Limits(slow_sleep_sec=1.0), applog=applog).test_client()
     assert client.get("/health").status_code == 200
     assert client.get("/api/demo").status_code == 200
     lines = [item["msg"] for item in applog.list()]
@@ -125,7 +152,20 @@ def test_target_access_is_logged(tmp_path):
     store.set_flag("http_500", True)
     assert client.get("/api/demo").status_code == 500
     assert "GET /api/demo 500" in applog.list()[-1]["msg"]
+    assert "checkout handler panic" in applog.list()[-1]["msg"]
     assert "started" not in applog.list()[-1]["line"]
+
+    store.set_flag("http_500", False)
+    store.set_flag("slow_api", True)
+    assert client.get("/api/demo").status_code == 200
+    slow_msg = applog.list()[-1]["msg"]
+    assert slow_msg.startswith("GET /api/demo 200")
+    assert "inventory lookup slow" in slow_msg
+
+    store.set_flag("slow_api", False)
+    store.set_flag("health_fail", True)
+    assert client.get("/health").status_code == 503
+    assert applog.list()[-1]["msg"] == "GET /health 503 ready=false; cache unreachable"
 
 
 def test_access_message_health_fail():

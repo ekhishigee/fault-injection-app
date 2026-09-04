@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from app.common.catalog import pick_log_line
+from app.common.catalog import access_story, phase_log_lines, pick_log_line
 from app.common.state import default_state_path
 
 Sink = Callable[[dict[str, Any]], None]
@@ -155,14 +155,22 @@ class AppLog:
     def emit(self, fault_id: str, phase: str, *, now: float | None = None) -> dict[str, Any]:
         now = time.time() if now is None else now
         with self._lock:
-            self._seq += 1
-            index = self._seq
             if phase == "stop":
                 self._last_tick.pop(fault_id, None)
             else:
                 self._last_tick[fault_id] = now
-        entry = format_entry(fault_id, phase, index=index, now=now)
-        return self._publish(entry)
+            if phase == "tick":
+                self._seq += 1
+                messages = (pick_log_line(fault_id, phase, self._seq),)
+            else:
+                messages = phase_log_lines(fault_id, phase)
+        last: dict[str, Any] | None = None
+        level = "warn" if phase in {"start", "tick"} else "info"
+        for message in messages:
+            last = self._publish(make_entry(message, level=level, now=now))
+        if last is None:
+            last = self._publish(format_entry(fault_id, phase, now=now))
+        return last
 
     def emit_access(
         self,
@@ -175,6 +183,9 @@ class AppLog:
     ) -> dict[str, Any]:
         now = time.time() if now is None else now
         msg = access_message(method, path, status, elapsed_ms)
+        note = access_story(path, status, elapsed_ms)
+        if note and note not in msg:
+            msg = f"{msg}; {note}"
         level = "warn" if status >= 400 else "info"
         return self._publish(make_entry(msg, level=level, now=now))
 
@@ -219,7 +230,7 @@ def format_entry(
 ) -> dict[str, Any]:
     now = time.time() if now is None else now
     msg = pick_log_line(fault_id, phase, index)
-    level = "warn" if phase in {"start", "tick"} and _looks_bad(msg) else "info"
+    level = "warn" if phase in {"start", "tick"} else "info"
     return make_entry(msg, level=level, now=now)
 
 
@@ -245,11 +256,6 @@ def make_entry(msg: str, *, level: str = "info", now: float | None = None) -> di
         "req": req,
         "line": line,
     }
-
-
-def _looks_bad(msg: str) -> bool:
-    lowered = msg.lower()
-    return any(token in lowered for token in (" 50", " 502", " 503", "refused", "failed", "111"))
 
 
 _default: AppLog | None = None
