@@ -63,7 +63,21 @@ button {
 button.primary { background: #1d4f86; border-color: #2d6db3; }
 button.danger { background: #5a2020; border-color: #7a3030; }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
-.toolbar { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
+.toolbar { display: flex; align-items: center; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
+.duration-bar { margin: 16px 0 0; }
+.duration-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.duration-label select {
+  background: var(--btn);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+.elapsed.remaining { color: var(--recovering); border-color: #5a4318; }
 #error { color: var(--active); min-height: 1.2em; }
 .history { max-height: 360px; overflow: auto; }
 .detail { font-size: 0.82rem; color: var(--muted); }

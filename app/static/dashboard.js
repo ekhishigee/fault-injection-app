@@ -63,7 +63,7 @@
         "<td class=\"actions\"></td>";
       const actions = tr.lastChild;
       const trigger = button("Trigger", function () {
-        post("/faults/" + id + "/start");
+        post("/faults/" + id + "/start", durationPayload());
       }, "primary");
       trigger.disabled = fault.status === "ACTIVE" || fault.status === "RECOVERING";
       const stop = button("Stop", function () {
@@ -162,14 +162,35 @@
     );
   }
 
+  function remainingHtml(fault) {
+    if (fault.status !== "ACTIVE" || !fault.expires_at) return "";
+    return (
+      "<span class=\"elapsed remaining\" data-expires-at=\"" + fault.expires_at + "\">" +
+      formatRemaining(fault.expires_at) +
+      "</span>"
+    );
+  }
+
   function tickElapsed() {
     document.querySelectorAll(".elapsed[data-started-at]").forEach(function (el) {
       el.textContent = formatElapsed(el.getAttribute("data-started-at"));
+    });
+    document.querySelectorAll(".elapsed[data-expires-at]").forEach(function (el) {
+      el.textContent = formatRemaining(el.getAttribute("data-expires-at"));
     });
   }
 
   function formatElapsed(startedAt) {
     var seconds = Math.max(0, Math.floor(Date.now() / 1000 - Number(startedAt)));
+    return formatClock(seconds);
+  }
+
+  function formatRemaining(expiresAt) {
+    var seconds = Math.max(0, Math.floor(Number(expiresAt) - Date.now() / 1000));
+    return "left " + formatClock(seconds);
+  }
+
+  function formatClock(seconds) {
     var hours = Math.floor(seconds / 3600);
     var minutes = Math.floor((seconds % 3600) / 60);
     var rest = seconds % 60;
@@ -194,6 +215,7 @@
       "<div class=\"last-result\">" +
       "<span class=\"badge " + resultClass(word) + "\">" + escapeHtml(word) + "</span>" +
       elapsedHtml(fault) +
+      remainingHtml(fault) +
       when +
       "</div>"
     );
@@ -216,13 +238,24 @@
     if (bar) bar.style.width = value == null ? "0%" : Math.max(0, Math.min(100, value)) + "%";
   }
 
-  function post(url) {
-    fetch(url, { method: "POST", headers: headers })
+  function post(url, body) {
+    const opts = { method: "POST", headers: headers };
+    if (body) {
+      opts.body = JSON.stringify(body);
+    }
+    fetch(url, opts)
       .then(parseJson)
       .then(render)
       .catch(function (err) {
         showError(err.message || String(err));
       });
+  }
+
+  function durationPayload() {
+    const el = document.getElementById("duration");
+    const raw = el && el.value;
+    if (!raw) return undefined;
+    return { duration_seconds: Number(raw) };
   }
 
   function parseJson(response) {

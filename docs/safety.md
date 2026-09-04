@@ -9,7 +9,7 @@ This program is meant to create faults. The limits exist so a small host stays r
 - Never fork-bomb. CPU workers default to the host core count (max 4) with `CPUQuota` ≈ 90% × workers.
 - Never stop `demo-controller` or `sshd` from the dashboard.
 - Never reboot the instance from the dashboard.
-- There is **no auto-recover**. The fault stays until Stop or Reset All.
+- There is **no auto-recover by default**. The fault stays until Stop or Reset All unless the operator set a duration on Trigger.
 
 ## Why a 0.5 GiB box is tight
 
@@ -21,14 +21,16 @@ Prefer **t4g.micro (1 GiB)** or larger if you want a clear memory spike without 
 
 ## How long a fault stays
 
-Until **Stop** or **Reset All**. The app does not clear the fault by itself.
+Until **Stop** or **Reset All**, unless Trigger was given a duration.
+
+`POST /faults/<id>/start` accepts optional JSON `{ "duration_seconds": 60 }` (integer 5–3600). The dashboard Duration control sends this on Trigger. When `expires_at` is reached, the next status refresh auto-stops that fault (`action=expire`). Service Stop/Start/Restart from the services table still stays until someone starts the service or Reset All.
 
 | Fault | Stays until | Still capped |
 | --- | --- | --- |
-| CPU | Stop | all cores (max 4), systemd `CPUQuota` ≈ 90% × workers |
-| Memory | Stop | 128 MiB (max 192), `MemoryMax=256M` |
-| Disk | Stop | loop mount / 32 MiB Compose cap |
-| HTTP 500 / Slow / Health | Stop | sleep cap 5s |
+| CPU | Stop, Reset All, or optional duration | all cores (max 4), systemd `CPUQuota` ≈ 90% × workers |
+| Memory | Stop, Reset All, or optional duration | 128 MiB (max 192), `MemoryMax=256M` |
+| Disk | Stop, Reset All, or optional duration | loop mount / 32 MiB Compose cap |
+| HTTP 500 / Slow / Health | Stop, Reset All, or optional duration | sleep cap 5s |
 | App / Nginx down | Stop or someone starts the service | cannot stop controller/sshd |
 
 The dashboard stays on :8080 if nginx is down. On a laptop, Stop CPU when you are done — it will keep burning host/VM CPU until then.

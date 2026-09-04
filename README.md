@@ -1,6 +1,6 @@
 # Fault Injection Demo
 
-A small dashboard for injecting CPU, memory, disk, process, and HTTP faults on a Linux host. Faults stay **ACTIVE until Stop** or **Reset All**.
+A small dashboard for injecting CPU, memory, disk, process, and HTTP faults on a Linux host. Faults stay **ACTIVE until Stop** or **Reset All**, unless Trigger includes a duration.
 
 Two supported run modes:
 
@@ -36,7 +36,7 @@ If port 80 is taken: `DEMO_HTTP_PORT=8088 docker compose up --build`.
 docker compose down
 ```
 
-On a laptop, Stop CPU when you are done — it keeps burning host/VM CPU until then.
+On a laptop, Stop CPU when you are done — it keeps burning host/VM CPU until then. Pick a duration on the dashboard if you want it to auto-stop.
 
 ## Run on EC2 (Amazon Linux 2023)
 
@@ -114,6 +114,8 @@ curl -s http://127.0.0.1/health
 curl -s -H "X-Demo-Token: $TOKEN" http://127.0.0.1:8080/api/status
 
 curl -s -X POST -H "X-Demo-Token: $TOKEN" http://127.0.0.1:8080/faults/cpu/start
+curl -s -X POST -H "X-Demo-Token: $TOKEN" -H "Content-Type: application/json" \
+  -d '{"duration_seconds": 30}' http://127.0.0.1:8080/faults/cpu/start
 curl -s -X POST -H "X-Demo-Token: $TOKEN" http://127.0.0.1:8080/faults/cpu/stop
 curl -s -X POST -H "X-Demo-Token: $TOKEN" http://127.0.0.1:8080/faults/reset
 ```
