@@ -1,0 +1,18 @@
+{
+  "name": "Fault Injection Demo",
+  "install": "sudo apt-get update && sudo apt-get install -y --no-install-recommends python3-venv stress-ng curl && python3 -m venv .venv && .venv/bin/pip install --upgrade pip && .venv/bin/pip install -r requirements-dev.txt",
+  "terminals": [
+    {
+      "name": "target",
+      "command": "mkdir -p /tmp/demo-faults && DEMO_DRY_RUN=1 DEMO_STATE_PATH=/tmp/demo-faults/state.json DEMO_DB_PATH=/tmp/demo-faults/events.db DEMO_APP_LOGS=1 DEMO_APP_LOG_PATH=/tmp/demo-faults/app.log DEMO_TARGET_HOST=127.0.0.1 DEMO_TARGET_PORT=8081 .venv/bin/python -m app.target"
+    },
+    {
+      "name": "controller",
+      "command": "mkdir -p /tmp/demo-faults && DEMO_DRY_RUN=1 DEMO_RUNTIME=compose DEMO_STATE_PATH=/tmp/demo-faults/state.json DEMO_DB_PATH=/tmp/demo-faults/events.db DEMO_APP_LOGS=1 DEMO_APP_LOG_PATH=/tmp/demo-faults/app.log DEMO_CONTROLLER_TOKEN=local-demo DEMO_CONTROLLER_HOST=0.0.0.0 DEMO_CONTROLLER_PORT=8080 .venv/bin/python -m app.controller"
+    }
+  ],
+  "ports": [
+    { "name": "dashboard", "port": 8080 },
+    { "name": "target", "port": 8081 }
+  ]
+}
