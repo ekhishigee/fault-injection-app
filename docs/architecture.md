@@ -39,4 +39,4 @@ A separate chaos agent (chaosd, Chaos Mesh, Toxiproxy) needs more RAM and, on AR
 
 - Two small Python processes cost more RSS than a single binary, but stay readable.
 - Memory faults are a fixed +128 MiB (cap 192 MiB), not “drive the host to 80%”. On 0.5 GiB that is a visible spike; prefer 1 GiB if you need SSH to stay up.
-- There is no auto-timeout. A fault stays until Stop or Reset All. Resource workers are still capped (`CPUQuota`, `MemoryMax`, isolated disk).
+- There is no auto-timeout by default. A fault stays until Stop or Reset All unless Trigger sent `duration_seconds`. Resource workers are still capped (`CPUQuota`, `MemoryMax`, isolated disk). Optional TTL is stored as `expires_at` and applied on `refresh()` / status polling — there is no extra daemon.

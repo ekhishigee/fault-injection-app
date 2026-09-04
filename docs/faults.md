@@ -1,6 +1,6 @@
 # Faults
 
-Every fault stays **ACTIVE until Stop** or **Reset All**.
+Every fault stays **ACTIVE until Stop** or **Reset All**, unless Trigger included a duration.
 
 | Fault | What you see | How it is implemented | How it stops |
 | --- | --- | --- | --- |
@@ -16,12 +16,14 @@ Every fault stays **ACTIVE until Stop** or **Reset All**.
 API:
 
 ```text
-POST /faults/<id>/start
+POST /faults/<id>/start          optional JSON { "duration_seconds": 60 }
 POST /faults/<id>/stop
 POST /faults/reset
 POST /services/{target,nginx}/{start,stop,restart}
 GET  /api/status
 GET  /api/events
 ```
+
+`duration_seconds` must be an integer from 5 to 3600. Omit it to keep today's until-Stop behavior. When the time elapses, the next `/api/status` (dashboard poll) auto-stops the fault.
 
 Optional AWS metrics and example alarms: [aws.md](aws.md).

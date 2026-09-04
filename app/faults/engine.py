@@ -35,6 +35,7 @@ class FaultEngine:
         self.runner = runner or FaultCtlRunner()
         self.events = events or EventStore()
         self.applog = applog or get_applog()
+        self._expiring = False
 
     def status(self) -> dict[str, Any]:
         self.refresh()
@@ -47,16 +48,19 @@ class FaultEngine:
             expires_at = item.get("expires_at")
             started_at = item.get("started_at")
             running_for = None
+            expires_in = None
             if item["status"] == FaultStatus.ACTIVE.value and started_at is not None:
                 running_for = max(0, int(now - float(started_at)))
                 active_ids.append(fault_id)
+            if item["status"] == FaultStatus.ACTIVE.value and expires_at is not None:
+                expires_in = max(0, int(float(expires_at) - now))
             faults[fault_id] = {
                 "id": fault_id,
                 "label": FAULT_LABELS[fault_id],
                 "status": item["status"],
                 "started_at": started_at,
                 "expires_at": expires_at,
-                "expires_in": None,
+                "expires_in": expires_in,
                 "running_for": running_for,
                 "error": item.get("error"),
             }
@@ -70,19 +74,22 @@ class FaultEngine:
             },
         }
 
-    def start(self, fault_id: str) -> dict[str, Any]:
+    def start(self, fault_id: str, duration_seconds: int | None = None) -> dict[str, Any]:
         self._require_fault(fault_id)
         self.refresh()
         current = self.store.get_fault(fault_id)
         if current["status"] == FaultStatus.ACTIVE.value:
             return self.status()
+        expires_at = (
+            time.time() + int(duration_seconds) if duration_seconds else None
+        )
         try:
             if fault_id in RESOURCE_FAULTS:
-                self._start_resource(fault_id)
+                self._start_resource(fault_id, expires_at=expires_at)
             elif fault_id in SERVICE_FAULTS:
-                self._start_service_fault(fault_id)
+                self._start_service_fault(fault_id, expires_at=expires_at)
             else:
-                self._start_flag(fault_id)
+                self._start_flag(fault_id, expires_at=expires_at)
             self._record(fault_id, "trigger", "started")
             self.applog.emit(fault_id, "start")
         except FaultError as exc:
@@ -109,6 +116,8 @@ class FaultEngine:
                 keep_times=True,
             )
             self._record(fault_id, action, "failed", str(exc), source=source)
+        if self._expiring:
+            return {}
         return self.status()
 
     def reset_all(self) -> dict[str, Any]:
@@ -143,9 +152,18 @@ class FaultEngine:
         return self.status()
 
     def expire_due(self) -> list[str]:
-        return []
+        due = self.store.expired_faults()
+        self._expiring = True
+        try:
+            for fault_id in due:
+                self.stop(fault_id, action="expire", source="timer")
+        finally:
+            self._expiring = False
+        return due
 
     def refresh(self) -> None:
+        if not self._expiring:
+            self.expire_due()
         data = self.store.read()
         observe_units = os.environ.get("DEMO_OBSERVE_RESOURCE_UNITS", "1").lower() not in {
             "0",
@@ -159,7 +177,7 @@ class FaultEngine:
             if self._unit_active(fault_id):
                 continue
             try:
-                self._start_resource(fault_id)
+                self._start_resource(fault_id, keep_times=True)
                 self._record(
                     fault_id,
                     "rearm",
@@ -209,7 +227,12 @@ class FaultEngine:
             self.applog.emit(fault_id, "stop")
         return self.status()
 
-    def _start_resource(self, fault_id: str) -> None:
+    def _start_resource(
+        self,
+        fault_id: str,
+        expires_at: float | None = None,
+        keep_times: bool = False,
+    ) -> None:
         args = self._resource_start_args(fault_id)
         result = self.runner.run(args)
         if not result.ok:
@@ -218,7 +241,8 @@ class FaultEngine:
             fault_id,
             status=FaultStatus.ACTIVE,
             started_at=time.time(),
-            expires_at=None,
+            expires_at=expires_at,
+            keep_times=keep_times,
         )
 
     def _stop_resource(self, fault_id: str, from_reset: bool = False) -> None:
@@ -239,7 +263,7 @@ class FaultEngine:
             raise FaultError(result.stderr or f"failed to stop {fault_id}")
         self.store.set_fault(fault_id, status=FaultStatus.IDLE)
 
-    def _start_service_fault(self, fault_id: str) -> None:
+    def _start_service_fault(self, fault_id: str, expires_at: float | None = None) -> None:
         service = SERVICE_FAULTS[fault_id]
         result = self.runner.run([f"{service}-stop"])
         self._raise_if_failed(result, f"stop {service}")
@@ -247,7 +271,7 @@ class FaultEngine:
             fault_id,
             status=FaultStatus.ACTIVE,
             started_at=time.time(),
-            expires_at=None,
+            expires_at=expires_at,
         )
 
     def _stop_service_fault(self, fault_id: str) -> None:
@@ -257,14 +281,14 @@ class FaultEngine:
         self._raise_if_failed(result, f"start {service}")
         self.store.set_fault(fault_id, status=FaultStatus.IDLE)
 
-    def _start_flag(self, fault_id: str) -> None:
+    def _start_flag(self, fault_id: str, expires_at: float | None = None) -> None:
         now = time.time()
         self.store.set_flag(fault_id, True)
         self.store.set_fault(
             fault_id,
             status=FaultStatus.ACTIVE,
             started_at=now,
-            expires_at=None,
+            expires_at=expires_at,
         )
 
     def _stop_flag(self, fault_id: str) -> None:

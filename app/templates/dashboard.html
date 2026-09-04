@@ -11,7 +11,7 @@
     <header>
       <div>
         <h1>Fault Injection Control Panel</h1>
-        <p class="muted">Trigger a fault and leave it running. Stop or Reset All when you are done.</p>
+        <p class="muted">Trigger a fault and leave it running, or pick a duration. Stop or Reset All always works.</p>
       </div>
       <div class="muted header-meta">
         <div>Runtime <span id="runtime" class="badge">–</span></div>
@@ -31,6 +31,19 @@
       <div class="card"><div class="muted">CPU</div><div class="gauge-value" id="cpu">–</div><div class="bar"><span id="cpu-bar"></span></div></div>
       <div class="card"><div class="muted">Memory</div><div class="gauge-value" id="memory">–</div><div class="bar"><span id="memory-bar"></span></div></div>
       <div class="card"><div class="muted">Disk <span id="disk-path"></span></div><div class="gauge-value" id="disk">–</div><div class="bar"><span id="disk-bar"></span></div></div>
+    </div>
+
+    <div class="toolbar duration-bar">
+      <label class="muted duration-label">Duration
+        <select id="duration">
+          <option value="">Until stop</option>
+          <option value="30">30 seconds</option>
+          <option value="60">1 minute</option>
+          <option value="300">5 minutes</option>
+          <option value="900">15 minutes</option>
+        </select>
+      </label>
+      <span class="muted">Applies to the next Trigger on resource and application faults.</span>
     </div>
 
     <h2>Resource faults</h2>
@@ -65,7 +78,7 @@
 
     <div class="toolbar">
       <button id="reset" class="danger">Reset All Faults</button>
-      <span class="muted">Faults stay active until Stop or Reset All.</span>
+      <span class="muted">Stop or Reset All always works, including before a duration ends.</span>
     </div>
     <p id="error"></p>
 

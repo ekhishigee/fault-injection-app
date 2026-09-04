@@ -15,6 +15,11 @@ from app.controller.auth import load_token, request_token, require_token
 from app.faults.engine import FaultEngine, FaultError
 
 ROOT = Path(__file__).resolve().parents[1]
+DURATION_MIN_SECONDS = 5
+DURATION_MAX_SECONDS = 3600
+DURATION_ERROR = (
+    f"duration_seconds must be an integer from {DURATION_MIN_SECONDS} to {DURATION_MAX_SECONDS}"
+)
 
 
 def create_app(
@@ -79,7 +84,11 @@ def create_app(
     @app.post("/faults/<fault_id>/start")
     @require_token
     def start_fault(fault_id: str):
-        return _fault_action(engine, fault_id, "start")
+        try:
+            duration_seconds = _duration_from_request()
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return _fault_action(engine, fault_id, "start", duration_seconds=duration_seconds)
 
     @app.post("/faults/<fault_id>/stop")
     @require_token
@@ -104,11 +113,37 @@ def create_app(
     return app
 
 
-def _fault_action(engine: FaultEngine, fault_id: str, action: str):
+def _duration_from_request() -> int | None:
+    payload = request.get_json(silent=True)
+    if payload is None:
+        if request.data and request.data.strip() and request.mimetype == "application/json":
+            raise ValueError(DURATION_ERROR)
+        return None
+    if not isinstance(payload, dict):
+        raise ValueError(DURATION_ERROR)
+    if "duration_seconds" not in payload or payload["duration_seconds"] is None:
+        return None
+    value = payload["duration_seconds"]
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(DURATION_ERROR)
+    if value < DURATION_MIN_SECONDS or value > DURATION_MAX_SECONDS:
+        raise ValueError(DURATION_ERROR)
+    return value
+
+
+def _fault_action(
+    engine: FaultEngine,
+    fault_id: str,
+    action: str,
+    duration_seconds: int | None = None,
+):
     if fault_id not in FAULT_IDS:
         return jsonify({"error": f"unknown fault: {fault_id}"}), 404
     try:
-        engine.start(fault_id) if action == "start" else engine.stop(fault_id)
+        if action == "start":
+            engine.start(fault_id, duration_seconds=duration_seconds)
+        else:
+            engine.stop(fault_id)
     except FaultError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify(_status_payload(engine, engine.events, engine.limits))

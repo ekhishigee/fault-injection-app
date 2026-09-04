@@ -78,3 +78,47 @@ def test_faults_do_not_auto_expire(tmp_path):
     assert engine.store.flags()["slow_api"] is True
     assert engine.status()["faults"]["cpu"]["running_for"] is not None
     assert engine.status()["faults"]["cpu"]["expires_in"] is None
+
+
+def test_start_with_duration_sets_expires_at(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.faults.engine.time.time", lambda: 1_000_000.0)
+    engine = make_engine(tmp_path)
+    status = engine.start("cpu", duration_seconds=30)
+    assert status["faults"]["cpu"]["status"] == FaultStatus.ACTIVE.value
+    assert status["faults"]["cpu"]["expires_at"] == 1_000_030.0
+    assert status["faults"]["cpu"]["expires_in"] == 30
+
+
+def test_expire_due_stops_resource_and_flag_faults(tmp_path, monkeypatch):
+    now = {"t": 1_000_000.0}
+
+    def fake_time():
+        return now["t"]
+
+    monkeypatch.setattr("app.faults.engine.time.time", fake_time)
+    monkeypatch.setattr("app.common.state.time.time", fake_time)
+    engine = make_engine(tmp_path)
+    engine.start("cpu", duration_seconds=30)
+    engine.start("slow_api", duration_seconds=30)
+    now["t"] = 1_000_031.0
+    status = engine.status()
+    assert status["faults"]["cpu"]["status"] == FaultStatus.IDLE.value
+    assert status["faults"]["slow_api"]["status"] == FaultStatus.IDLE.value
+    assert engine.store.flags()["slow_api"] is False
+    assert ["cpu-stop"] in engine.runner.calls
+    events = engine.events.list()
+    expire_events = [row for row in events if row["action"] == "expire"]
+    assert {row["fault_id"] for row in expire_events} == {"cpu", "slow_api"}
+    assert all(row["result"] == "stopped" for row in expire_events)
+    assert all(row["source"] == "timer" for row in expire_events)
+
+
+def test_rearm_preserves_expires_at(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.faults.engine.time.time", lambda: 1_000_000.0)
+    engine = make_engine(tmp_path)
+    engine.start("cpu", duration_seconds=60)
+    engine.runner.active.discard("cpu")
+    engine.refresh()
+    assert engine.store.get_fault("cpu")["status"] == FaultStatus.ACTIVE.value
+    assert engine.store.get_fault("cpu")["expires_at"] == 1_000_060.0
+    assert engine.store.get_fault("cpu")["started_at"] == 1_000_000.0

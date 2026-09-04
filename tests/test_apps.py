@@ -46,6 +46,8 @@ def test_controller_status_and_fault_api(tmp_path):
     assert started.status_code == 200
     started_body = started.get_json()
     assert started_body["faults"]["cpu"]["status"] == "ACTIVE"
+    assert started_body["faults"]["cpu"]["expires_at"] is None
+    assert started_body["faults"]["cpu"]["expires_in"] is None
     assert started_body["events"][0]["result"] == "started"
 
     stopped = client.post("/faults/cpu/stop")
@@ -55,6 +57,32 @@ def test_controller_status_and_fault_api(tmp_path):
     reset = client.post("/faults/reset")
     assert reset.status_code == 200
     assert reset.get_json()["faults"]["cpu"]["status"] == "IDLE"
+
+
+def test_controller_start_with_duration(tmp_path):
+    client = make_controller(tmp_path)
+    started = client.post("/faults/cpu/start", json={"duration_seconds": 30})
+    assert started.status_code == 200
+    fault = started.get_json()["faults"]["cpu"]
+    assert fault["status"] == "ACTIVE"
+    assert fault["expires_at"] is not None
+    assert 25 <= fault["expires_in"] <= 30
+
+
+def test_controller_rejects_invalid_duration(tmp_path):
+    client = make_controller(tmp_path)
+    bodies = (
+        {"duration_seconds": 3},
+        {"duration_seconds": -1},
+        {"duration_seconds": 99999},
+        {"duration_seconds": "abc"},
+        {"duration_seconds": True},
+        {"duration_seconds": 30.5},
+    )
+    for body in bodies:
+        response = client.post("/faults/cpu/start", json=body)
+        assert response.status_code == 400, body
+        assert "duration_seconds" in response.get_json()["error"]
 
 
 def test_controller_rejects_unknown_fault(tmp_path):
