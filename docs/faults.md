@@ -24,6 +24,6 @@ GET  /api/status
 GET  /api/events
 ```
 
-`duration_seconds` must be an integer from 5 to 3600. Omit it to keep today's until-Stop behavior. When the time elapses, the next `/api/status` (dashboard poll) auto-stops the fault.
+`duration_seconds` must be an integer from 5 to 3600. Omit it to keep today's until-Stop behavior. When the time elapses, the next `/api/status` (dashboard poll) auto-stops the fault. A JSON body is honored even if `Content-Type` is missing or wrong; unknown keys and invalid values return 400. Starting an already-ACTIVE fault with a duration returns 400 — stop it first.
 
 Optional AWS metrics and example alarms: [aws.md](aws.md).

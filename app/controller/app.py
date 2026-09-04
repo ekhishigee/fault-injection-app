@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -114,12 +115,17 @@ def create_app(
 
 
 def _duration_from_request() -> int | None:
-    payload = request.get_json(silent=True)
-    if payload is None:
-        if request.data and request.data.strip() and request.mimetype == "application/json":
-            raise ValueError(DURATION_ERROR)
+    raw = request.get_data(cache=True)
+    if not raw or not raw.strip():
         return None
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(DURATION_ERROR) from exc
     if not isinstance(payload, dict):
+        raise ValueError(DURATION_ERROR)
+    extra_keys = set(payload) - {"duration_seconds"}
+    if extra_keys:
         raise ValueError(DURATION_ERROR)
     if "duration_seconds" not in payload or payload["duration_seconds"] is None:
         return None

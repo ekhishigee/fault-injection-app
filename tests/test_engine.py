@@ -1,7 +1,7 @@
 from app.common.events import EventStore
 from app.common.limits import Limits
 from app.common.state import FaultStatus, StateStore
-from app.faults.engine import FaultEngine
+from app.faults.engine import FaultEngine, FaultError
 from app.faults.runner import FakeRunner
 
 
@@ -114,11 +114,46 @@ def test_expire_due_stops_resource_and_flag_faults(tmp_path, monkeypatch):
 
 
 def test_rearm_preserves_expires_at(tmp_path, monkeypatch):
-    monkeypatch.setattr("app.faults.engine.time.time", lambda: 1_000_000.0)
+    now = {"t": 1_000_000.0}
+
+    def fake_time():
+        return now["t"]
+
+    monkeypatch.setattr("app.faults.engine.time.time", fake_time)
     engine = make_engine(tmp_path)
     engine.start("cpu", duration_seconds=60)
     engine.runner.active.discard("cpu")
+    now["t"] = 1_000_010.0
     engine.refresh()
     assert engine.store.get_fault("cpu")["status"] == FaultStatus.ACTIVE.value
     assert engine.store.get_fault("cpu")["expires_at"] == 1_000_060.0
     assert engine.store.get_fault("cpu")["started_at"] == 1_000_000.0
+
+
+def test_start_duration_on_active_fault_fails(tmp_path):
+    engine = make_engine(tmp_path)
+    engine.start("cpu")
+    try:
+        engine.start("cpu", duration_seconds=30)
+        raise AssertionError("expected FaultError")
+    except FaultError as exc:
+        assert "already active" in str(exc)
+    assert engine.store.get_fault("cpu")["status"] == FaultStatus.ACTIVE.value
+    assert engine.store.get_fault("cpu")["expires_at"] is None
+
+
+def test_expire_due_is_idempotent(tmp_path, monkeypatch):
+    now = {"t": 1_000_000.0}
+
+    def fake_time():
+        return now["t"]
+
+    monkeypatch.setattr("app.faults.engine.time.time", fake_time)
+    monkeypatch.setattr("app.common.state.time.time", fake_time)
+    engine = make_engine(tmp_path)
+    engine.start("cpu", duration_seconds=30)
+    now["t"] = 1_000_031.0
+    assert engine.expire_due() == ["cpu"]
+    assert engine.expire_due() == []
+    expire_events = [row for row in engine.events.list() if row["action"] == "expire"]
+    assert len(expire_events) == 1

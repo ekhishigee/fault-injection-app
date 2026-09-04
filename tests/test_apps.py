@@ -69,6 +69,55 @@ def test_controller_start_with_duration(tmp_path):
     assert 25 <= fault["expires_in"] <= 30
 
 
+def test_controller_status_expires_due_fault(tmp_path, monkeypatch):
+    now = {"t": 1_000_000.0}
+
+    def fake_time():
+        return now["t"]
+
+    monkeypatch.setattr("app.faults.engine.time.time", fake_time)
+    monkeypatch.setattr("app.common.state.time.time", fake_time)
+    client = make_controller(tmp_path)
+    started = client.post("/faults/cpu/start", json={"duration_seconds": 30})
+    assert started.status_code == 200
+    now["t"] = 1_000_031.0
+    status = client.get("/api/status")
+    assert status.status_code == 200
+    body = status.get_json()
+    assert body["faults"]["cpu"]["status"] == "IDLE"
+    assert any(
+        event["action"] == "expire" and event["source"] == "timer"
+        for event in body["events"]
+    )
+
+
+def test_controller_honors_json_without_json_content_type(tmp_path):
+    client = make_controller(tmp_path)
+    response = client.post(
+        "/faults/cpu/start",
+        data=b'{"duration_seconds": 30}',
+        content_type="application/x-www-form-urlencoded",
+    )
+    assert response.status_code == 200
+    fault = response.get_json()["faults"]["cpu"]
+    assert fault["status"] == "ACTIVE"
+    assert fault["expires_at"] is not None
+
+
+def test_controller_rejects_unknown_duration_key(tmp_path):
+    client = make_controller(tmp_path)
+    response = client.post("/faults/cpu/start", json={"duration": 30})
+    assert response.status_code == 400
+
+
+def test_controller_rejects_duration_on_active_fault(tmp_path):
+    client = make_controller(tmp_path)
+    assert client.post("/faults/cpu/start").status_code == 200
+    response = client.post("/faults/cpu/start", json={"duration_seconds": 30})
+    assert response.status_code == 400
+    assert "already active" in response.get_json()["error"]
+
+
 def test_controller_rejects_invalid_duration(tmp_path):
     client = make_controller(tmp_path)
     bodies = (

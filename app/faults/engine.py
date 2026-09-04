@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import threading
 import time
 from typing import Any
 
@@ -35,11 +36,12 @@ class FaultEngine:
         self.runner = runner or FaultCtlRunner()
         self.events = events or EventStore()
         self.applog = applog or get_applog()
-        self._expiring = False
+        self._lock = threading.RLock()
 
     def status(self) -> dict[str, Any]:
-        self.refresh()
-        data = self.store.read()
+        with self._lock:
+            self.refresh()
+            data = self.store.read()
         now = time.time()
         faults = {}
         active_ids: list[str] = []
@@ -76,49 +78,39 @@ class FaultEngine:
 
     def start(self, fault_id: str, duration_seconds: int | None = None) -> dict[str, Any]:
         self._require_fault(fault_id)
-        self.refresh()
-        current = self.store.get_fault(fault_id)
-        if current["status"] == FaultStatus.ACTIVE.value:
+        with self._lock:
+            self.refresh()
+            current = self.store.get_fault(fault_id)
+            if current["status"] == FaultStatus.ACTIVE.value:
+                if duration_seconds is not None:
+                    raise FaultError(
+                        f"{fault_id} is already active; stop it before setting a duration"
+                    )
+                return self.status()
+            expires_at = (
+                time.time() + int(duration_seconds)
+                if duration_seconds is not None
+                else None
+            )
+            try:
+                if fault_id in RESOURCE_FAULTS:
+                    self._start_resource(fault_id, expires_at=expires_at)
+                elif fault_id in SERVICE_FAULTS:
+                    self._start_service_fault(fault_id, expires_at=expires_at)
+                else:
+                    self._start_flag(fault_id, expires_at=expires_at)
+                self._record(fault_id, "trigger", "started")
+                self.applog.emit(fault_id, "start")
+            except FaultError as exc:
+                self.store.set_fault(fault_id, status=FaultStatus.FAILED, error=str(exc))
+                self._record(fault_id, "trigger", "failed", str(exc))
             return self.status()
-        expires_at = (
-            time.time() + int(duration_seconds) if duration_seconds else None
-        )
-        try:
-            if fault_id in RESOURCE_FAULTS:
-                self._start_resource(fault_id, expires_at=expires_at)
-            elif fault_id in SERVICE_FAULTS:
-                self._start_service_fault(fault_id, expires_at=expires_at)
-            else:
-                self._start_flag(fault_id, expires_at=expires_at)
-            self._record(fault_id, "trigger", "started")
-            self.applog.emit(fault_id, "start")
-        except FaultError as exc:
-            self.store.set_fault(fault_id, status=FaultStatus.FAILED, error=str(exc))
-            self._record(fault_id, "trigger", "failed", str(exc))
-        return self.status()
 
     def stop(self, fault_id: str, *, action: str = "stop", source: str = "controller") -> dict[str, Any]:
         self._require_fault(fault_id)
-        try:
-            if fault_id in RESOURCE_FAULTS:
-                self._stop_resource(fault_id)
-            elif fault_id in SERVICE_FAULTS:
-                self._stop_service_fault(fault_id)
-            else:
-                self._stop_flag(fault_id)
-            self._record(fault_id, action, "stopped", source=source)
-            self.applog.emit(fault_id, "stop")
-        except FaultError as exc:
-            self.store.set_fault(
-                fault_id,
-                status=FaultStatus.FAILED,
-                error=str(exc),
-                keep_times=True,
-            )
-            self._record(fault_id, action, "failed", str(exc), source=source)
-        if self._expiring:
-            return {}
-        return self.status()
+        with self._lock:
+            self._halt(fault_id, action=action, source=source)
+            return self.status()
 
     def reset_all(self) -> dict[str, Any]:
         errors: list[str] = []
@@ -152,53 +144,47 @@ class FaultEngine:
         return self.status()
 
     def expire_due(self) -> list[str]:
-        due = self.store.expired_faults()
-        self._expiring = True
-        try:
-            for fault_id in due:
-                self.stop(fault_id, action="expire", source="timer")
-        finally:
-            self._expiring = False
-        return due
+        with self._lock:
+            return self._expire_due()
 
     def refresh(self) -> None:
-        if not self._expiring:
-            self.expire_due()
-        data = self.store.read()
-        observe_units = os.environ.get("DEMO_OBSERVE_RESOURCE_UNITS", "1").lower() not in {
-            "0",
-            "false",
-            "no",
-        }
-        for fault_id in RESOURCE_FAULTS:
-            fault = data["faults"][fault_id]
-            if not observe_units or fault["status"] != FaultStatus.ACTIVE.value:
-                continue
-            if self._unit_active(fault_id):
-                continue
-            try:
-                self._start_resource(fault_id, keep_times=True)
-                self._record(
-                    fault_id,
-                    "rearm",
-                    "started",
-                    "worker exited; fault kept active until Stop",
-                    source="refresh",
-                )
-            except FaultError as exc:
-                self.store.set_fault(
-                    fault_id,
-                    status=FaultStatus.FAILED,
-                    error=str(exc),
-                    keep_times=True,
-                )
-                self._record(fault_id, "rearm", "failed", str(exc), source="refresh")
-        for fault_id, service in SERVICE_FAULTS.items():
-            fault = data["faults"][fault_id]
-            if fault["status"] != FaultStatus.RECOVERING.value:
-                continue
-            if self._service_status(service) == "running":
-                self.store.set_fault(fault_id, status=FaultStatus.IDLE)
+        with self._lock:
+            self._expire_due()
+            data = self.store.read()
+            observe_units = os.environ.get("DEMO_OBSERVE_RESOURCE_UNITS", "1").lower() not in {
+                "0",
+                "false",
+                "no",
+            }
+            for fault_id in RESOURCE_FAULTS:
+                fault = data["faults"][fault_id]
+                if not observe_units or fault["status"] != FaultStatus.ACTIVE.value:
+                    continue
+                if self._unit_active(fault_id):
+                    continue
+                try:
+                    self._start_resource(fault_id, keep_times=True)
+                    self._record(
+                        fault_id,
+                        "rearm",
+                        "started",
+                        "worker exited; fault kept active until Stop",
+                        source="refresh",
+                    )
+                except FaultError as exc:
+                    self.store.set_fault(
+                        fault_id,
+                        status=FaultStatus.FAILED,
+                        error=str(exc),
+                        keep_times=True,
+                    )
+                    self._record(fault_id, "rearm", "failed", str(exc), source="refresh")
+            for fault_id, service in SERVICE_FAULTS.items():
+                fault = data["faults"][fault_id]
+                if fault["status"] != FaultStatus.RECOVERING.value:
+                    continue
+                if self._service_status(service) == "running":
+                    self.store.set_fault(fault_id, status=FaultStatus.IDLE)
 
     def control_service(self, name: str, action: str) -> dict[str, Any]:
         if name not in SERVICE_NAMES:
@@ -226,6 +212,39 @@ class FaultEngine:
             )
             self.applog.emit(fault_id, "stop")
         return self.status()
+
+    def _expire_due(self) -> list[str]:
+        stopped: list[str] = []
+        now = time.time()
+        for fault_id in self.store.expired_faults(now=now):
+            current = self.store.get_fault(fault_id)
+            expires_at = current.get("expires_at")
+            if current.get("status") != FaultStatus.ACTIVE.value:
+                continue
+            if expires_at is None or now < float(expires_at):
+                continue
+            self._halt(fault_id, action="expire", source="timer")
+            stopped.append(fault_id)
+        return stopped
+
+    def _halt(self, fault_id: str, *, action: str, source: str) -> None:
+        try:
+            if fault_id in RESOURCE_FAULTS:
+                self._stop_resource(fault_id)
+            elif fault_id in SERVICE_FAULTS:
+                self._stop_service_fault(fault_id)
+            else:
+                self._stop_flag(fault_id)
+            self._record(fault_id, action, "stopped", source=source)
+            self.applog.emit(fault_id, "stop")
+        except FaultError as exc:
+            self.store.set_fault(
+                fault_id,
+                status=FaultStatus.FAILED,
+                error=str(exc),
+                keep_times=True,
+            )
+            self._record(fault_id, action, "failed", str(exc), source=source)
 
     def _start_resource(
         self,
